@@ -23,9 +23,11 @@ from mondo_link.exceptions import DataUnavailableError
 _FTS_TOKEN_RE = re.compile(r"[^\s\"]+")
 
 #: Stable ``CASE`` expression ranking predicates for ORDER BY (lower = stronger).
-_PREDICATE_CASE = "CASE x.predicate " + " ".join(
-    f"WHEN '{pred}' THEN {rank}" for pred, rank in PREDICATE_RANK.items()
-) + " ELSE 99 END"
+_PREDICATE_CASE = (
+    "CASE x.predicate "
+    + " ".join(f"WHEN '{pred}' THEN {rank}" for pred, rank in PREDICATE_RANK.items())
+    + " ELSE 99 END"
+)
 
 
 class MondoRepository:
@@ -163,11 +165,17 @@ class MondoRepository:
         ).fetchall()
         total = int(
             self._conn.execute(
-                f"SELECT COUNT(*) AS n FROM term WHERE {where}", (pattern,)  # noqa: S608
+                f"SELECT COUNT(*) AS n FROM term WHERE {where}",  # noqa: S608
+                (pattern,),
             ).fetchone()["n"]
         )
         hits = [
-            {"mondo_id": r["mondo_id"], "name": r["name"], "definition": r["definition"], "score": 0.0}
+            {
+                "mondo_id": r["mondo_id"],
+                "name": r["name"],
+                "definition": r["definition"],
+                "score": 0.0,
+            }
             for r in rows
         ]
         return hits, total
@@ -214,8 +222,7 @@ class MondoRepository:
         """Total transitive ancestors of ``mondo_id`` (excluding self)."""
         return int(
             self._conn.execute(
-                "SELECT COUNT(*) AS n FROM mondo_closure "
-                "WHERE mondo_id = ? AND ancestor_id != ?",
+                "SELECT COUNT(*) AS n FROM mondo_closure WHERE mondo_id = ? AND ancestor_id != ?",
                 (mondo_id, mondo_id),
             ).fetchone()["n"]
         )
@@ -224,8 +231,7 @@ class MondoRepository:
         """Total transitive descendants of ``mondo_id`` (excluding self)."""
         return int(
             self._conn.execute(
-                "SELECT COUNT(*) AS n FROM mondo_closure "
-                "WHERE ancestor_id = ? AND mondo_id != ?",
+                "SELECT COUNT(*) AS n FROM mondo_closure WHERE ancestor_id = ? AND mondo_id != ?",
                 (mondo_id, mondo_id),
             ).fetchone()["n"]
         )

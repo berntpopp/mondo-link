@@ -43,9 +43,7 @@ def default_error_next_commands(
             return [cmd("search_diseases", query=value), cmd("get_server_capabilities")]
     if tool == "resolve_xref":
         value = str(arguments.get("xref_id", ""))
-        return (
-            [cmd("search_diseases", query=value)] if value else [cmd("get_server_capabilities")]
-        )
+        return [cmd("search_diseases", query=value)] if value else [cmd("get_server_capabilities")]
     if error_code == "data_unavailable":
         return [cmd("get_diagnostics")]
     return [cmd("get_server_capabilities")]
@@ -109,7 +107,10 @@ def after_ancestors(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "get_disease_ancestors", {"term": mondo_id}, int(payload.get("total", 0)), 1000
             )
         )
-    steps += [cmd("get_disease_parents", term=mondo_id), cmd("get_disease_descendants", term=mondo_id)]
+    steps += [
+        cmd("get_disease_parents", term=mondo_id),
+        cmd("get_disease_descendants", term=mondo_id),
+    ]
     return steps
 
 
@@ -125,7 +126,10 @@ def after_descendants(payload: dict[str, Any]) -> list[dict[str, Any]]:
                 "get_disease_descendants", {"term": mondo_id}, int(payload.get("total", 0)), 1000
             )
         )
-    steps += [cmd("get_disease_children", term=mondo_id), cmd("get_disease_ancestors", term=mondo_id)]
+    steps += [
+        cmd("get_disease_children", term=mondo_id),
+        cmd("get_disease_ancestors", term=mondo_id),
+    ]
     return steps
 
 
