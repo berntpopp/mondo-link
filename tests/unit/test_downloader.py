@@ -67,6 +67,30 @@ def test_download_bulk(config: ServerSettings) -> None:
 
 
 @respx.mock
+def test_download_bulk_optional_sssom_404_degrades(config: ServerSettings) -> None:
+    # The OBO downloads fine; the supplementary SSSOM 404s. The bulk must NOT
+    # raise — it degrades to an OBO-only build (sssom path is None).
+    respx.get(config.data.obo_url).mock(
+        return_value=httpx.Response(
+            200, text="[Term]\nid: MONDO:0000001\n", headers={"ETag": '"a"'}
+        )
+    )
+    respx.get(config.data.sssom_url).mock(return_value=httpx.Response(404))
+    bulk = downloader.download_bulk(config)
+    assert bulk.path("obo") is not None
+    assert bulk.path("sssom") is None
+    assert "sssom" in bulk.results
+
+
+@respx.mock
+def test_download_bulk_required_obo_404_raises(config: ServerSettings) -> None:
+    # The OBO is required: its failure must still propagate.
+    respx.get(config.data.obo_url).mock(return_value=httpx.Response(404))
+    with pytest.raises(DownloadError):
+        downloader.download_bulk(config)
+
+
+@respx.mock
 def test_download_bulk_not_modified(config: ServerSettings) -> None:
     # Seed local files + cache via an initial 200 download.
     respx.get(config.data.obo_url).mock(

@@ -59,13 +59,15 @@ make mcp-serve      # runs mcp_server.py on stdio (stdout is reserved for the pr
 
 ## Data provenance
 
-The index is built from the Monarch PURLs
-`http://purl.obolibrary.org/obo/mondo.obo` and
-`http://purl.obolibrary.org/obo/mondo.sssom.tsv` via conditional GET
-(ETag / Last-Modified). The build is atomic (temp file + `os.replace`) under a
-lock, and records provenance in a `meta` table (Mondo release version, source
-validators, counts). `get_diagnostics` and `get_server_capabilities` report the
-loaded release.
+The index is built from the Mondo OBO release
+(`http://purl.obolibrary.org/obo/mondo.obo`) plus the consolidated SSSOM
+cross-ontology mappings (from the Mondo repository), fetched via conditional GET
+(ETag / Last-Modified). The OBO already carries dbxrefs, so the SSSOM is a
+**supplementary, optional** source — if it is unavailable the index still builds
+from the OBO (cross-references present, curated SSSOM predicates omitted). The
+build is atomic (temp file + `os.replace`) under a lock, and records provenance
+in a `meta` table (Mondo release version, source validators, counts).
+`get_diagnostics` and `get_server_capabilities` report the loaded release.
 
 ## Documentation
 

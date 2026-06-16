@@ -10,6 +10,7 @@ cheap ``304``).
 from __future__ import annotations
 
 import json
+import logging
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING
@@ -21,8 +22,14 @@ from mondo_link.exceptions import DownloadError
 if TYPE_CHECKING:
     from mondo_link.config import ServerSettings
 
+logger = logging.getLogger(__name__)
+
 #: Logical key -> local filename for the release files the index is built from.
 REPORT_FILENAMES: dict[str, str] = {"obo": "mondo.obo", "sssom": "mondo.sssom.tsv"}
+
+#: Supplementary keys: a download failure degrades gracefully (the index is still
+#: built from the OBO, which already carries dbxrefs) rather than aborting.
+OPTIONAL_KEYS: frozenset[str] = frozenset({"sssom"})
 
 CACHE_FILENAME = "download_cache.json"
 _CHUNK_SIZE = 1 << 16
@@ -175,5 +182,21 @@ def download_bulk(
     selected = keys if keys is not None else list(REPORT_FILENAMES)
     bulk = BulkDownload()
     for key in selected:
-        bulk.results[key] = download_file(config, key, force=force)
+        try:
+            bulk.results[key] = download_file(config, key, force=force)
+        except DownloadError:
+            if key not in OPTIONAL_KEYS:
+                raise
+            # Supplementary file unavailable: keep a previously-downloaded copy if
+            # present, else proceed without it. Mark not_modified so a missing
+            # optional file never forces a rebuild on its own.
+            dest = config.data.data_dir / REPORT_FILENAMES[key]
+            logger.warning(
+                "optional_release_file_unavailable key=%s url=%s", key, _url_for(config, key)
+            )
+            bulk.results[key] = DownloadResult(
+                key=key,
+                path=dest if dest.exists() else None,
+                not_modified=True,
+            )
     return bulk
