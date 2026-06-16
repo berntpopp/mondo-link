@@ -1,0 +1,62 @@
+format-version: 1.2
+data-version: mondo/releases/2026-06-01/mondo.owl
+date: 01:06:2026 00:00
+subsetdef: clingen "Disease classes available in the ClinGen resource"
+subsetdef: ordo_disorder "ORDO disorder"
+ontology: mondo
+
+[Term]
+id: MONDO:0000001
+name: disease or disorder
+def: "A disease is a disposition to undergo pathological processes." [MONDO:design]
+
+[Term]
+id: MONDO:0000002
+name: cardiovascular disorder
+is_a: MONDO:0000001 ! disease or disorder
+
+[Term]
+id: MONDO:0000003
+name: nervous system disorder
+is_a: MONDO:0000001 ! disease or disorder
+
+[Term]
+id: MONDO:0000004
+name: connective tissue disorder
+is_a: MONDO:0000001 ! disease or disorder
+
+[Term]
+id: MONDO:0015159
+name: multiple congenital anomalies syndrome
+is_a: MONDO:0000004 ! connective tissue disorder
+
+[Term]
+id: MONDO:0017310
+name: Marfan and Marfan-related disorder
+is_a: MONDO:0000002 ! cardiovascular disorder
+is_a: MONDO:0000004 ! connective tissue disorder
+
+[Term]
+id: MONDO:0008426
+name: Shprintzen-Goldberg syndrome
+def: "Shprintzen-Goldberg syndrome (SGS) is a very rare genetic disorder characterized by craniosynostosis." [Orphanet:2462]
+subset: clingen {source="MONDO:CLINGEN"}
+synonym: "SGS" EXACT ABBREVIATION [OMIM:182212]
+synonym: "Marfanoid craniosynostosis syndrome" EXACT [OMIM:182212]
+synonym: "marfanoid disorder" RELATED [GARD:1]
+xref: OMIM:182212 {source="MONDO:equivalentTo"}
+xref: Orphanet:2462 {source="MONDO:equivalentTo"}
+xref: DOID:0050776
+is_a: MONDO:0015159 {source="Orphanet:2462"} ! multiple congenital anomalies syndrome
+is_a: MONDO:0017310 {source="Orphanet:2462"} ! Marfan and Marfan-related disorder
+
+[Term]
+id: MONDO:0099999
+name: obsolete legacy disorder
+is_obsolete: true
+replaced_by: MONDO:0008426
+consider: MONDO:0000003
+
+[Typedef]
+id: part_of
+name: part of
