@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import re
 
 _MONDO_ID_RE = re.compile(r"^MONDO:(\d{7})$", re.IGNORECASE)
