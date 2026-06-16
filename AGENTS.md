@@ -1,0 +1,78 @@
+# AGENTS.md — mondo-link
+
+Guidance for agents and contributors working in this repository.
+
+## What this is
+
+`mondo-link` is an MCP + REST server that grounds disease work in the Mondo
+Disease Ontology. It builds a local SQLite index from the Mondo OBO + SSSOM
+releases and serves read-only tools for disease lookup, the `is_a` hierarchy,
+and cross-ontology mapping. It mirrors the sibling `mgi-link` stack/architecture.
+
+## Two planes (non-negotiable boundary)
+
+- **Data plane** — `config.py`, `constants.py`, `identifiers.py`, `ingest/`,
+  `data/`, `services/`. Downloads the Mondo release (conditional GET), atomically
+  builds the SQLite index (terms, labels, synonyms, definitions, `is_a` closure,
+  merged OBO + SSSOM cross-references with provenance + predicate,
+  deprecated/`replaced_by`), and **returns plain dicts**. It raises typed
+  exceptions from `mondo_link.exceptions`; it never builds error envelopes.
+- **MCP plane** — `mcp/`. Domain-agnostic scaffolding shared with siblings.
+  `run_mcp_tool` (in `mcp/envelope.py`) owns `success` / `_meta` and converts
+  exceptions into **returned** structured errors (never raised to the client).
+
+## Invariants
+
+- Services return plain dicts; the envelope owns `success`/`_meta` and returns
+  structured errors. **7-code error taxonomy**: `invalid_input`, `not_found`,
+  `ambiguous_query`, `data_unavailable`, `rate_limited`, `upstream_unavailable`,
+  `internal_error`.
+- Every response carries `_meta.next_commands` (ready-to-call follow-ups).
+- Every tool declares `output_schema` + `READ_ONLY_OPEN_WORLD` annotations, and
+  its first description sentence is a discovery summary ending with
+  `Signature: tool(args...)`.
+- `response_mode` ∈ `minimal | compact | standard | full`.
+- Keep `mcp/capabilities.py::TOOLS` in sync with the registered tool set
+  (`tests/unit/test_tool_names.py` enforces this).
+- Identifiers are normalised in `identifiers.py` (`MONDO:NNNNNNN`; external
+  CURIEs case-folded, `Orphanet` → `ORPHA`).
+- Ground every claim in the local index and cite the MONDO id + Mondo release
+  version (`mondo_version` is echoed in record payloads).
+
+## Definition of done
+
+`make ci-local` must be green:
+
+```
+format-check   ruff format --check
+lint-ci        ruff check
+lint-loc       scripts/check_file_size.py   (≤ 500 lines/file, hard cap)
+typecheck      mypy --strict
+test-fast      pytest -n auto, coverage ≥ 80%
+```
+
+## Conventions
+
+- Python 3.12+, `uv`, hatchling. Add deps via `pyproject.toml`, then `uv lock`.
+- `structlog` logs to **stderr only** — stdout is reserved for the stdio MCP
+  protocol. Never `print` to stdout outside the CLI.
+- Files stay under 500 lines; split by responsibility, not layer.
+- TDD: write the failing test first. Keep unit tests self-contained (build a
+  fixture SQLite from `load_schema_sql()` or `tests/fixtures/`).
+- Frozen contracts: `mcp/` scaffolding, `ingest/schema.sql`, and the
+  `MondoService` / `MondoRepository` signatures are the seams other modules code
+  against — change them deliberately.
+
+## Layout
+
+```
+mondo_link/
+  config, constants, identifiers, exceptions, logging_config, buildinfo, app
+  server_manager                # unified | http | stdio transports
+  ingest/  downloader, lock, parser, builder, schema.sql, cli
+  data/    repository           # read-only SQLite
+  services/ mondo_service, shaping, pagination, refresh
+  mcp/     envelope, capabilities, annotations, schemas, next_commands,
+           middleware, facade, arg_help, resources, service_adapters, tools/
+server.py  mcp_server.py  scripts/check_file_size.py
+```
