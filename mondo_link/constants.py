@@ -1,0 +1,39 @@
+"""Domain constants for mondo-link: schema version, roots, xref prefixes, ranks."""
+
+from __future__ import annotations
+
+#: Bumped whenever the on-disk SQLite schema changes incompatibly.
+SCHEMA_VERSION = 1
+
+#: The Mondo ontology root term ("disease or disorder").
+MONDO_ROOT = "MONDO:0000001"
+
+#: Cross-ontology prefixes surfaced as first-class xref sources.
+XREF_PREFIXES = ("OMIM", "ORPHA", "DOID", "NCIT", "UMLS", "MESH", "MEDGEN", "SCTID", "GARD")
+
+#: Mapping predicate -> rank for ordering cross-references (lower is stronger).
+PREDICATE_RANK = {
+    "exactMatch": 0,
+    "equivalentTo": 1,
+    "closeMatch": 2,
+    "narrowMatch": 3,
+    "broadMatch": 4,
+    "xref": 5,
+}
+
+#: How a resolve match was made, strongest first.
+MATCH_TYPES = ("mondo_id", "primary", "exact_synonym", "related_synonym", "xref")
+
+#: Canonical citation pasted verbatim into capability/_meta payloads.
+RECOMMENDED_CITATION = (
+    "Vasilevsky NA, Matentzoglu NA, Toro S, et al. Mondo: Unifying diseases for the "
+    "world, by the world. medRxiv 2022.04.13.22273750. "
+    "doi:10.1101/2022.04.13.22273750. Mondo Disease Ontology, Monarch Initiative, "
+    "https://mondo.monarchinitiative.org/."
+)
+
+#: License attribution surfaced in capability/reference notes.
+MONDO_LICENSE = (
+    "The Mondo Disease Ontology is distributed under CC BY 4.0 "
+    "(https://creativecommons.org/licenses/by/4.0/). Cite Mondo / the Monarch Initiative."
+)
