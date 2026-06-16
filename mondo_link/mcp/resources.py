@@ -1,8 +1,4 @@
-"""Static string resources for MCP instructions and discovery resources.
-
-Wave 0 ships placeholder copy; Wave 1C expands the workflow primer and notes as
-the Mondo tools land.
-"""
+"""Static string resources for MCP instructions and discovery resources."""
 
 from __future__ import annotations
 
@@ -30,9 +26,15 @@ MONDO_SERVER_INSTRUCTIONS = (
     "- Cross-ontology: resolve_xref(xref_id=) maps an external CURIE back to "
     "Mondo; map_cross_ontology(term=, prefixes=) lists a term's mappings to "
     "OMIM / Orphanet / DOID / NCIT / UMLS / MeSH / MedGen / SNOMED / GARD.\n"
-    "- Verbosity: most tools take response_mode (compact | standard | full). "
-    "Discovery: get_server_capabilities or get_diagnostics, or read "
-    "mondo://capabilities / mondo://tools. "
+    "- Workflow: resolve_disease -> get_disease -> get_disease_ancestors / "
+    "get_disease_descendants / get_disease_parents / get_disease_children -> "
+    "resolve_xref / map_cross_ontology. Follow _meta.next_commands rather than "
+    "guessing the next tool.\n"
+    "- Verbosity: most tools take response_mode (minimal | compact | standard | "
+    "full, default compact). Discovery: get_server_capabilities or "
+    "get_diagnostics, or read mondo://capabilities / mondo://tools.\n"
+    "- Citation: always cite the MONDO id AND the Mondo release version "
+    "(get_diagnostics / capabilities report it). Mondo is CC BY 4.0. "
     f"{RESEARCH_USE_NOTICE}"
 )
 
@@ -46,10 +48,14 @@ MONDO_USAGE_NOTES = (
 )
 
 MONDO_REFERENCE_NOTES = (
-    "Error codes: invalid_input, not_found, ambiguous_query, data_unavailable, "
+    "Error codes (7): invalid_input, not_found, ambiguous_query, data_unavailable, "
     "rate_limited, upstream_unavailable, internal_error. match_type on "
-    "resolve_disease is mondo_id | primary | exact_synonym | related_synonym | "
-    "xref. The local index is built from the Mondo OBO + SSSOM releases (Monarch "
-    "PURLs) and refreshed by an external cron job; get_diagnostics reports the "
-    f"loaded release and counts. {MONDO_LICENSE}"
+    "resolve_disease is one of mondo_id | primary | exact_synonym | "
+    "related_synonym | xref (strongest first). Cross-references are ranked by "
+    "mapping predicate, strongest first: exactMatch > equivalentTo > closeMatch > "
+    "narrowMatch > broadMatch > xref. First-class xref prefixes: OMIM, ORPHA, "
+    "DOID, NCIT, UMLS, MESH, MEDGEN, SCTID, GARD. The local index is built from "
+    "the Mondo OBO + SSSOM releases (Monarch PURLs, data source = Mondo / Monarch "
+    "Initiative) and refreshed by an external cron job; get_diagnostics reports "
+    f"the loaded release and counts. {MONDO_LICENSE}"
 )

@@ -1,8 +1,8 @@
 """Builders for `_meta.next_commands` entries: `{tool, arguments}` steps.
 
-Wave 0 ships the envelope-facing subset (``cmd``, ``default_error_next_commands``,
-``withdrawn_recovery``). Later waves add the per-tool success-path chainers as the
-Mondo tools land.
+The envelope-facing subset (``cmd``, ``widen_cmd``, ``default_error_next_commands``,
+``withdrawn_recovery``) is consumed by the error boundary; the per-tool ``after_*``
+chainers steer the success path (resolve -> record -> hierarchy -> cross-ontology).
 """
 
 from __future__ import annotations
@@ -57,3 +57,128 @@ def withdrawn_recovery(replaced_by: list[dict[str, str]]) -> list[dict[str, Any]
     if not targets:
         return [cmd("get_server_capabilities")]
     return [cmd("get_disease", term=t) for t in targets[:2]]
+
+
+def after_resolve_disease(resolution: dict[str, Any]) -> list[dict[str, Any]]:
+    """After resolve_disease: open the canonical record, else fall back to search."""
+    mondo_id = resolution.get("mondo_id")
+    if not mondo_id:
+        return [
+            cmd("search_diseases", query=str(resolution.get("query", ""))),
+            cmd("get_server_capabilities"),
+        ]
+    return [cmd("get_disease", term=mondo_id)]
+
+
+def after_search(query: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After search_diseases: open the top hit; widen if truncated."""
+    hits = payload.get("results", [])
+    if not hits:
+        return [cmd("resolve_disease", query=query), cmd("get_server_capabilities")]
+    steps: list[dict[str, Any]] = []
+    top = hits[0].get("mondo_id")
+    if top:
+        steps.append(cmd("get_disease", term=top))
+    if payload.get("truncated"):
+        steps.append(
+            widen_cmd("search_diseases", {"query": query}, int(payload.get("total", 0)), 200)
+        )
+    return steps or [cmd("get_server_capabilities")]
+
+
+def after_get_disease(disease: dict[str, Any]) -> list[dict[str, Any]]:
+    """After get_disease: walk up the DAG and map across ontologies."""
+    mondo_id = disease.get("mondo_id")
+    if not mondo_id:
+        return [cmd("get_server_capabilities")]
+    return [
+        cmd("get_disease_ancestors", term=mondo_id),
+        cmd("map_cross_ontology", term=mondo_id),
+    ]
+
+
+def after_ancestors(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After get_disease_ancestors: offer parents/descendants; widen if truncated."""
+    mondo_id = payload.get("mondo_id")
+    if not mondo_id:
+        return [cmd("get_server_capabilities")]
+    steps: list[dict[str, Any]] = []
+    if payload.get("truncated"):
+        steps.append(
+            widen_cmd(
+                "get_disease_ancestors", {"term": mondo_id}, int(payload.get("total", 0)), 1000
+            )
+        )
+    steps += [cmd("get_disease_parents", term=mondo_id), cmd("get_disease_descendants", term=mondo_id)]
+    return steps
+
+
+def after_descendants(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After get_disease_descendants: offer children/ancestors; widen if truncated."""
+    mondo_id = payload.get("mondo_id")
+    if not mondo_id:
+        return [cmd("get_server_capabilities")]
+    steps: list[dict[str, Any]] = []
+    if payload.get("truncated"):
+        steps.append(
+            widen_cmd(
+                "get_disease_descendants", {"term": mondo_id}, int(payload.get("total", 0)), 1000
+            )
+        )
+    steps += [cmd("get_disease_children", term=mondo_id), cmd("get_disease_ancestors", term=mondo_id)]
+    return steps
+
+
+def after_parents(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After get_disease_parents: open the first parent, then the full ancestor set."""
+    mondo_id = payload.get("mondo_id")
+    parents = payload.get("parents", [])
+    if not mondo_id:
+        return [cmd("get_server_capabilities")]
+    steps: list[dict[str, Any]] = []
+    if parents and parents[0].get("mondo_id"):
+        steps.append(cmd("get_disease", term=parents[0]["mondo_id"]))
+    steps.append(cmd("get_disease_ancestors", term=mondo_id))
+    return steps
+
+
+def after_children(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After get_disease_children: open the first child, then the full descendant set."""
+    mondo_id = payload.get("mondo_id")
+    children = payload.get("children", [])
+    if not mondo_id:
+        return [cmd("get_server_capabilities")]
+    steps: list[dict[str, Any]] = []
+    if children and children[0].get("mondo_id"):
+        steps.append(cmd("get_disease", term=children[0]["mondo_id"]))
+    steps.append(cmd("get_disease_descendants", term=mondo_id))
+    return steps
+
+
+def after_resolve_xref(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After resolve_xref: open the top matching Mondo term; widen if truncated."""
+    matches = payload.get("matches", [])
+    if not matches:
+        return [
+            cmd("search_diseases", query=str(payload.get("xref_id", ""))),
+            cmd("get_server_capabilities"),
+        ]
+    steps: list[dict[str, Any]] = []
+    top = matches[0].get("mondo_id")
+    if top:
+        steps.append(cmd("get_disease", term=top))
+    if payload.get("truncated") and payload.get("xref_id"):
+        steps.append(
+            widen_cmd(
+                "resolve_xref", {"xref_id": payload["xref_id"]}, int(payload.get("total", 0)), 200
+            )
+        )
+    return steps or [cmd("get_server_capabilities")]
+
+
+def after_cross_ontology(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After map_cross_ontology: walk up the DAG, or open the record itself."""
+    mondo_id = payload.get("mondo_id")
+    if not mondo_id:
+        return [cmd("get_server_capabilities")]
+    return [cmd("get_disease_ancestors", term=mondo_id), cmd("get_disease", term=mondo_id)]
