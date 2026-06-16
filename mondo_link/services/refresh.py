@@ -1,43 +1,89 @@
-"""Data bootstrap + conditional-refresh scheduler.
+"""Startup data bootstrap and the optional in-process refresh scheduler.
 
-WAVE 0 STUB — the real download/build pipeline is owned by Wave 1A. These keep
-the exact public signatures the server entry points depend on so the app boots
-and serves ``data_unavailable`` until the index is built. Replace the bodies in
-Wave 1A.
+Cron is the recommended refresh mechanism (see docs/deployment.md), so the
+in-process scheduler is OFF by default. ``bootstrap_data`` builds the index on
+first start if absent — non-fatal: the server still starts and tools report
+``data_unavailable`` until the build lands.
+
+The frozen ingest builder (``ensure_database`` / ``rebuild``) is imported lazily
+inside function bodies so this module stays importable (and the app boots) even
+if the ingest plane is mid-build. The builder reads ``config.data.*``, so the
+``MondoDataConfig`` handed to us by the server entry points is wrapped back into
+a full :class:`ServerSettings` before the build runs.
 """
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
+import random
 from typing import TYPE_CHECKING, Any
 
+from mondo_link.exceptions import DownloadError, MondoError
+
 if TYPE_CHECKING:
-    from mondo_link.config import MondoDataConfig
+    from mondo_link.config import MondoDataConfig, ServerSettings
+
+
+def _as_settings(config: MondoDataConfig) -> ServerSettings:
+    """Wrap a :class:`MondoDataConfig` into the ``ServerSettings`` the builder reads.
+
+    The server entry points hand us ``settings.data``; the frozen builder reads
+    ``config.data.*``. Reuse the live ``settings`` when it already carries this
+    exact data config (the common case), otherwise build a thin one around it.
+    """
+    from mondo_link.config import ServerSettings, settings
+
+    if settings.data is config:
+        return settings
+    return ServerSettings(data=config)
 
 
 async def bootstrap_data(config: MondoDataConfig, logger: Any) -> None:
-    """Ensure the local Mondo index exists (no-op until Wave 1A builds it)."""
-    if config.db_path.exists():
-        logger.info("mondo_index_present", path=str(config.db_path))
-        return
-    logger.warning(
-        "mondo_index_missing",
-        path=str(config.db_path),
-        hint="Run `mondo-link-data build` (ingest pipeline lands in Wave 1A).",
-    )
+    """Ensure the index exists, building it in a worker thread. Non-fatal."""
+    from mondo_link.ingest.builder import ensure_database
+    from mondo_link.mcp.service_adapters import reset_mondo_service
+
+    try:
+        path = await asyncio.to_thread(ensure_database, _as_settings(config))
+        reset_mondo_service()
+        logger.info("mondo_data_ready", db_path=str(path))
+    except (MondoError, DownloadError, OSError) as exc:
+        logger.warning("mondo_data_bootstrap_failed", error=str(exc))
+
+
+async def _refresh_loop(config: MondoDataConfig, logger: Any) -> None:
+    """Conditionally rebuild the index on an interval; reset the service on change."""
+    from mondo_link.ingest.builder import rebuild
+    from mondo_link.mcp.service_adapters import reset_mondo_service
+
+    settings = _as_settings(config)
+    interval = config.refresh_interval_hours * 3600
+    while True:
+        jitter = random.uniform(0, config.refresh_jitter_seconds)  # noqa: S311 - jitter only
+        await asyncio.sleep(interval + jitter)
+        try:
+            result = await asyncio.to_thread(rebuild, settings, force=False)
+            if result.changed:
+                reset_mondo_service()
+                version = result.meta.mondo_version if result.meta else None
+                logger.info("mondo_data_refreshed", mondo_version=version)
+            else:
+                logger.debug("mondo_data_unchanged")
+        except (MondoError, DownloadError, OSError) as exc:
+            logger.warning("mondo_data_refresh_failed", error=str(exc))
 
 
 def start_refresh_scheduler(config: MondoDataConfig, logger: Any) -> asyncio.Task[None] | None:
-    """Start the in-process refresh loop when enabled (no-op stub for now)."""
+    """Start the optional refresh loop; returns the task, or ``None`` if disabled."""
     if not config.refresh_enabled:
         return None
-    logger.info("mondo_refresh_scheduler_disabled_stub")
-    return None
+    logger.info("mondo_refresh_scheduler_enabled", interval_hours=config.refresh_interval_hours)
+    return asyncio.create_task(_refresh_loop(config, logger))
 
 
 async def stop_refresh_scheduler(task: asyncio.Task[None] | None) -> None:
-    """Cancel the refresh loop, if any."""
+    """Cancel the refresh loop task if running."""
     if task is None:
         return
     task.cancel()

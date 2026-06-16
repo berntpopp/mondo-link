@@ -1,18 +1,31 @@
 """Read-only SQLite repository for the built Mondo index (CONTRACT BARRIER).
 
 Wave 0 freezes the constructor (read-only connection, ``DataUnavailableError`` on
-a missing file) and the method-signature surface downstream depends on. Query
-bodies raise ``NotImplementedError``; Wave 1B fills them in against the frozen
-``schema.sql``.
+a missing file) and the method-signature surface downstream depends on. Wave 1B
+fills the query bodies against the frozen ``schema.sql``.
+
+All indexes are pre-computed by the builder, so this layer only reads rows and
+decodes the JSON list columns. FTS5 queries are sanitized so raw user text never
+reaches ``MATCH`` (which can raise on operator characters like ``( : -``).
 """
 
 from __future__ import annotations
 
+import json
+import re
 import sqlite3
 from pathlib import Path
 from typing import Any
 
+from mondo_link.constants import PREDICATE_RANK
 from mondo_link.exceptions import DataUnavailableError
+
+_FTS_TOKEN_RE = re.compile(r"[^\s\"]+")
+
+#: Stable ``CASE`` expression ranking predicates for ORDER BY (lower = stronger).
+_PREDICATE_CASE = "CASE x.predicate " + " ".join(
+    f"WHEN '{pred}' THEN {rank}" for pred, rank in PREDICATE_RANK.items()
+) + " ELSE 99 END"
 
 
 class MondoRepository:
@@ -41,54 +54,261 @@ class MondoRepository:
         """Close the underlying SQLite connection."""
         self._conn.close()
 
+    # -- helpers ---------------------------------------------------------------
+
+    @staticmethod
+    def _fts_query(text: str) -> str:
+        """Build a safe FTS5 ``MATCH`` string (token AND, last token prefixed).
+
+        Each token is wrapped in double quotes (escaping embedded quotes) so any
+        punctuation a user types (``(``, ``:``, ``-``) is treated as literal text
+        rather than FTS5 syntax. Returns ``'""'`` for empty/blank input.
+        """
+        tokens = _FTS_TOKEN_RE.findall(text or "")
+        if not tokens:
+            return '""'
+        quoted: list[str] = []
+        for tok in tokens[:-1]:
+            quoted.append('"' + tok.replace('"', '""') + '"')
+        last = tokens[-1].replace('"', '""')
+        quoted.append('"' + last + '"*')
+        return " ".join(quoted)
+
+    @staticmethod
+    def _term_from_row(row: sqlite3.Row) -> dict[str, Any]:
+        """Decode a ``term`` row, parsing the JSON list/object columns."""
+        record: dict[str, Any] = {
+            "mondo_id": row["mondo_id"],
+            "name": row["name"],
+            "definition": row["definition"],
+            "is_obsolete": bool(row["is_obsolete"]),
+            "replaced_by": row["replaced_by"],
+            "consider": _json_or(row["consider"], []),
+            "synonyms": _json_or(row["synonyms"], []),
+            "subsets": _json_or(row["subsets"], []),
+        }
+        return record
+
     # -- provenance ------------------------------------------------------------
 
     def read_meta(self) -> dict[str, Any]:
         """Return build provenance from the ``meta`` table."""
-        raise NotImplementedError
+        try:
+            row = self._conn.execute("SELECT * FROM meta WHERE id = 1").fetchone()
+        except sqlite3.Error as exc:
+            raise DataUnavailableError(
+                f"Mondo database at {self._path} is unreadable: {exc}."
+            ) from exc
+        return dict(row) if row is not None else {}
 
     # -- term records ----------------------------------------------------------
 
     def get_term(self, mondo_id: str) -> dict[str, Any] | None:
         """Return the ``term`` row for a canonical MONDO id, or ``None``."""
-        raise NotImplementedError
+        row = self._conn.execute("SELECT * FROM term WHERE mondo_id = ?", (mondo_id,)).fetchone()
+        return self._term_from_row(row) if row is not None else None
 
     def resolve_label(self, label: str) -> list[dict[str, Any]]:
         """Resolve a label/synonym to candidate ``(mondo_id, label_type)`` rows."""
-        raise NotImplementedError
+        rows = self._conn.execute(
+            "SELECT mondo_id, label_type FROM term_lookup WHERE lookup_label = ?",
+            (label.upper(),),
+        ).fetchall()
+        return [{"mondo_id": r["mondo_id"], "label_type": r["label_type"]} for r in rows]
 
-    def search(self, query: str, *, limit: int, include_obsolete: bool) -> list[dict[str, Any]]:
-        """Full-text search over name/synonyms/definition."""
-        raise NotImplementedError
+    def search(
+        self, query: str, *, limit: int, include_obsolete: bool
+    ) -> tuple[list[dict[str, Any]], int]:
+        """Full-text search over name/synonyms/definition; returns ``(rows, total)``."""
+        match = self._fts_query(query)
+        where = "term_fts MATCH ?"
+        if not include_obsolete:
+            where += " AND t.is_obsolete = 0"
+        sql = (
+            "SELECT f.mondo_id, t.name, t.definition, bm25(term_fts) AS score "  # noqa: S608
+            "FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "
+            f"WHERE {where} ORDER BY score LIMIT ?"
+        )
+        count_sql = (
+            "SELECT COUNT(*) AS n FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "  # noqa: S608
+            f"WHERE {where}"
+        )
+        try:
+            rows = self._conn.execute(sql, (match, limit)).fetchall()
+            total = int(self._conn.execute(count_sql, (match,)).fetchone()["n"])
+        except sqlite3.Error:
+            return self._search_like(query, limit=limit, include_obsolete=include_obsolete)
+        hits = [
+            {
+                "mondo_id": r["mondo_id"],
+                "name": r["name"],
+                "definition": r["definition"],
+                "score": round(-r["score"], 4) if r["score"] else 0.0,
+            }
+            for r in rows
+        ]
+        return hits, total
+
+    def _search_like(
+        self, query: str, *, limit: int, include_obsolete: bool
+    ) -> tuple[list[dict[str, Any]], int]:
+        """``LIKE`` fallback for pathological FTS input."""
+        pattern = "%" + query.upper().replace("%", "").replace("_", "") + "%"
+        where = "name_upper LIKE ?"
+        if not include_obsolete:
+            where += " AND is_obsolete = 0"
+        rows = self._conn.execute(
+            f"SELECT mondo_id, name, definition FROM term WHERE {where} ORDER BY name LIMIT ?",  # noqa: S608
+            (pattern, limit),
+        ).fetchall()
+        total = int(
+            self._conn.execute(
+                f"SELECT COUNT(*) AS n FROM term WHERE {where}", (pattern,)  # noqa: S608
+            ).fetchone()["n"]
+        )
+        hits = [
+            {"mondo_id": r["mondo_id"], "name": r["name"], "definition": r["definition"], "score": 0.0}
+            for r in rows
+        ]
+        return hits, total
 
     # -- hierarchy -------------------------------------------------------------
 
     def parents(self, mondo_id: str) -> list[dict[str, Any]]:
         """Immediate parent terms of ``mondo_id``."""
-        raise NotImplementedError
+        rows = self._conn.execute(
+            "SELECT p.parent_id AS mondo_id, t.name FROM mondo_parent p "
+            "LEFT JOIN term t ON t.mondo_id = p.parent_id WHERE p.mondo_id = ? ORDER BY t.name",
+            (mondo_id,),
+        ).fetchall()
+        return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
     def children(self, mondo_id: str) -> list[dict[str, Any]]:
         """Immediate child terms of ``mondo_id``."""
-        raise NotImplementedError
+        rows = self._conn.execute(
+            "SELECT p.mondo_id AS mondo_id, t.name FROM mondo_parent p "
+            "LEFT JOIN term t ON t.mondo_id = p.mondo_id WHERE p.parent_id = ? ORDER BY t.name",
+            (mondo_id,),
+        ).fetchall()
+        return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
     def ancestors(self, mondo_id: str, *, limit: int) -> list[dict[str, Any]]:
         """Transitive ancestors of ``mondo_id`` (via the closure table)."""
-        raise NotImplementedError
+        rows = self._conn.execute(
+            "SELECT t.mondo_id, t.name FROM mondo_closure c JOIN term t ON t.mondo_id = c.ancestor_id "
+            "WHERE c.mondo_id = ? AND c.ancestor_id != ? ORDER BY t.name LIMIT ?",
+            (mondo_id, mondo_id, limit),
+        ).fetchall()
+        return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
     def descendants(self, mondo_id: str, *, limit: int) -> list[dict[str, Any]]:
         """Transitive descendants of ``mondo_id`` (via the closure table)."""
-        raise NotImplementedError
+        rows = self._conn.execute(
+            "SELECT t.mondo_id, t.name FROM mondo_closure c JOIN term t ON t.mondo_id = c.mondo_id "
+            "WHERE c.ancestor_id = ? AND c.mondo_id != ? ORDER BY t.name LIMIT ?",
+            (mondo_id, mondo_id, limit),
+        ).fetchall()
+        return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
-    def top_groupings(self) -> list[dict[str, Any]]:
-        """The top-level disease groupings (the Mondo grouping grid)."""
-        raise NotImplementedError
+    def count_ancestors(self, mondo_id: str) -> int:
+        """Total transitive ancestors of ``mondo_id`` (excluding self)."""
+        return int(
+            self._conn.execute(
+                "SELECT COUNT(*) AS n FROM mondo_closure "
+                "WHERE mondo_id = ? AND ancestor_id != ?",
+                (mondo_id, mondo_id),
+            ).fetchone()["n"]
+        )
+
+    def count_descendants(self, mondo_id: str) -> int:
+        """Total transitive descendants of ``mondo_id`` (excluding self)."""
+        return int(
+            self._conn.execute(
+                "SELECT COUNT(*) AS n FROM mondo_closure "
+                "WHERE ancestor_id = ? AND mondo_id != ?",
+                (mondo_id, mondo_id),
+            ).fetchone()["n"]
+        )
+
+    def top_groupings(self, mondo_id: str) -> list[dict[str, Any]]:
+        """Top-level disease groupings that are ancestors of ``mondo_id``."""
+        rows = self._conn.execute(
+            "SELECT g.mondo_id, g.name FROM mondo_top_grouping g "
+            "JOIN mondo_closure c ON c.ancestor_id = g.mondo_id "
+            "WHERE c.mondo_id = ? ORDER BY g.name",
+            (mondo_id,),
+        ).fetchall()
+        return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
     # -- cross-references ------------------------------------------------------
 
     def xrefs_for(self, mondo_id: str, prefixes: list[str] | None = None) -> list[dict[str, Any]]:
         """Cross-references for ``mondo_id``, optionally filtered by prefix."""
-        raise NotImplementedError
+        sql = (
+            "SELECT x.prefix, x.object_id, x.object_id_upper, x.predicate, x.origin, x.source "
+            "FROM xref x WHERE x.mondo_id = ?"
+        )
+        params: list[Any] = [mondo_id]
+        if prefixes:
+            placeholders = ", ".join("?" for _ in prefixes)
+            sql += f" AND x.prefix IN ({placeholders})"
+            params.extend(p.upper() for p in prefixes)
+        sql += f" ORDER BY {_PREDICATE_CASE}, x.prefix, x.object_id"
+        rows = self._conn.execute(sql, tuple(params)).fetchall()
+        return [
+            {
+                "prefix": r["prefix"],
+                "object_id": r["object_id"],
+                "predicate": r["predicate"],
+                "origin": r["origin"],
+                "source": r["source"],
+            }
+            for r in rows
+        ]
 
     def mondo_for_xref(self, xref_id: str, *, limit: int) -> list[dict[str, Any]]:
         """MONDO terms that carry a mapping to the external ``xref_id`` CURIE."""
-        raise NotImplementedError
+        rows = self._conn.execute(
+            "SELECT DISTINCT x.mondo_id, t.name, x.prefix, x.object_id, x.predicate, x.origin "  # noqa: S608
+            "FROM xref x JOIN term t ON t.mondo_id = x.mondo_id "
+            f"WHERE x.object_id_upper = ? ORDER BY {_PREDICATE_CASE}, t.name LIMIT ?",
+            (xref_id.upper(), limit),
+        ).fetchall()
+        return [
+            {
+                "mondo_id": r["mondo_id"],
+                "name": r["name"],
+                "prefix": r["prefix"],
+                "object_id": r["object_id"],
+                "predicate": r["predicate"],
+                "origin": r["origin"],
+            }
+            for r in rows
+        ]
+
+    def counts(self) -> dict[str, int]:
+        """Return row counts for the principal tables (for diagnostics)."""
+        return {
+            "terms": self._count("term"),
+            "obsolete": int(
+                self._conn.execute(
+                    "SELECT COUNT(*) AS n FROM term WHERE is_obsolete = 1"
+                ).fetchone()["n"]
+            ),
+            "xrefs": self._count("xref"),
+            "closure": self._count("mondo_closure"),
+            "top_groupings": self._count("mondo_top_grouping"),
+        }
+
+    def _count(self, table: str) -> int:
+        return int(self._conn.execute(f"SELECT COUNT(*) AS n FROM {table}").fetchone()["n"])  # noqa: S608
+
+
+def _json_or(value: Any, default: Any) -> Any:
+    """Decode a JSON column, returning ``default`` when null/empty/invalid."""
+    if not value:
+        return default
+    try:
+        return json.loads(value)
+    except (json.JSONDecodeError, TypeError):  # pragma: no cover - defensive
+        return default
