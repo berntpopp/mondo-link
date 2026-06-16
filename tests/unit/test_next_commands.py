@@ -41,7 +41,9 @@ def test_after_resolve_disease() -> None:
 def test_after_search() -> None:
     _assert_steps(nc.after_search("x", {"results": [{"mondo_id": "MONDO:1"}]}))
     _assert_steps(nc.after_search("x", {"results": []}))
-    widened = nc.after_search("x", {"results": [{"mondo_id": "MONDO:1"}], "truncated": True, "total": 90})
+    widened = nc.after_search(
+        "x", {"results": [{"mondo_id": "MONDO:1"}], "truncated": True, "total": 90}
+    )
     _assert_steps(widened)
     assert any(c["tool"] == "search_diseases" and c["arguments"].get("limit") for c in widened)
 
@@ -73,11 +75,18 @@ def test_after_parents_and_children() -> None:
 
 
 def test_after_resolve_xref_and_cross_ontology() -> None:
-    _assert_steps(nc.after_resolve_xref({"matches": [{"mondo_id": "MONDO:1"}], "xref_id": "OMIM:1"}))
+    _assert_steps(
+        nc.after_resolve_xref({"matches": [{"mondo_id": "MONDO:1"}], "xref_id": "OMIM:1"})
+    )
     _assert_steps(nc.after_resolve_xref({"matches": [], "xref_id": "OMIM:1"}))
     _assert_steps(
         nc.after_resolve_xref(
-            {"matches": [{"mondo_id": "MONDO:1"}], "xref_id": "OMIM:1", "truncated": True, "total": 90}
+            {
+                "matches": [{"mondo_id": "MONDO:1"}],
+                "xref_id": "OMIM:1",
+                "truncated": True,
+                "total": 90,
+            }
         )
     )
     _assert_steps(nc.after_cross_ontology({"mondo_id": "MONDO:1"}))
@@ -85,13 +94,21 @@ def test_after_resolve_xref_and_cross_ontology() -> None:
 
 
 def test_default_error_next_commands() -> None:
-    _assert_steps(nc.default_error_next_commands("resolve_disease", "not_found", {"query": "Marfan"}))
-    _assert_steps(nc.default_error_next_commands("resolve_xref", "not_found", {"xref_id": "OMIM:1"}))
+    _assert_steps(
+        nc.default_error_next_commands("resolve_disease", "not_found", {"query": "Marfan"})
+    )
+    _assert_steps(
+        nc.default_error_next_commands("resolve_xref", "not_found", {"xref_id": "OMIM:1"})
+    )
     _assert_steps(nc.default_error_next_commands("get_disease", "data_unavailable", {}))
-    _assert_steps(nc.default_error_next_commands("get_disease", "not_found", {"term": "OMIM:182212"}))
+    _assert_steps(
+        nc.default_error_next_commands("get_disease", "not_found", {"term": "OMIM:182212"})
+    )
 
 
 def test_withdrawn_recovery() -> None:
     _assert_steps(nc.withdrawn_recovery([{"mondo_id": "MONDO:2"}]))
-    assert nc.withdrawn_recovery([{"mondo_id": "MONDO:2"}])[0] == nc.cmd("get_disease", term="MONDO:2")
+    assert nc.withdrawn_recovery([{"mondo_id": "MONDO:2"}])[0] == nc.cmd(
+        "get_disease", term="MONDO:2"
+    )
     _assert_steps(nc.withdrawn_recovery([]))

@@ -5,10 +5,25 @@ import re
 _MONDO_ID_RE = re.compile(r"^MONDO:(\d{7})$", re.IGNORECASE)
 _BARE_ID_RE = re.compile(r"^\d{7}$")
 _XREF_PREFIX_RE = re.compile(r"^([A-Za-z][A-Za-z0-9]*):(.+)$")
-_KNOWN_PREFIX_ALIASES = {"ORPHANET": "ORPHA", "ORPHA": "ORPHA", "OMIM": "OMIM",
-    "MIM": "OMIM", "DOID": "DOID", "NCIT": "NCIT", "UMLS": "UMLS", "MESH": "MESH",
-    "MSH": "MESH", "MEDGEN": "MEDGEN", "SCTID": "SCTID", "SNOMEDCT": "SCTID",
-    "GARD": "GARD", "ICD10CM": "ICD10CM", "ICD10": "ICD10", "EFO": "EFO"}
+_KNOWN_PREFIX_ALIASES = {
+    "ORPHANET": "ORPHA",
+    "ORPHA": "ORPHA",
+    "OMIM": "OMIM",
+    "MIM": "OMIM",
+    "DOID": "DOID",
+    "NCIT": "NCIT",
+    "UMLS": "UMLS",
+    "MESH": "MESH",
+    "MSH": "MESH",
+    "MEDGEN": "MEDGEN",
+    "SCTID": "SCTID",
+    "SNOMEDCT": "SCTID",
+    "GARD": "GARD",
+    "ICD10CM": "ICD10CM",
+    "ICD10": "ICD10",
+    "EFO": "EFO",
+}
+
 
 def normalize_mondo_id(value: str) -> str | None:
     text = (value or "").strip()
@@ -19,8 +34,10 @@ def normalize_mondo_id(value: str) -> str | None:
         return f"MONDO:{text}"
     return None
 
+
 def looks_like_mondo_id(value: str) -> bool:
     return normalize_mondo_id(value) is not None
+
 
 def normalize_xref(value: str) -> str | None:
     text = (value or "").strip()
@@ -33,9 +50,11 @@ def normalize_xref(value: str) -> str | None:
         return None
     return f"{prefix}:{local}"
 
+
 def xref_prefix(value: str) -> str | None:
     norm = normalize_xref(value)
     return norm.split(":", 1)[0] if norm else None
+
 
 def infer_xref_source(value: str) -> str | None:
     if looks_like_mondo_id(value):

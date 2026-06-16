@@ -64,7 +64,9 @@ class MondoService:
         """
         raw = (term or "").strip()
         if not raw:
-            raise InvalidInputError("term must be a non-empty MONDO id, label, or xref.", field="term")
+            raise InvalidInputError(
+                "term must be a non-empty MONDO id, label, or xref.", field="term"
+            )
 
         mondo_id = normalize_mondo_id(raw)
         if mondo_id:
@@ -165,7 +167,9 @@ class MondoService:
         """Resolve any id/label/xref to a canonical MONDO term with provenance."""
         raw = (query or "").strip()
         if not raw:
-            raise InvalidInputError("query must be a non-empty MONDO id, label, or xref.", field="query")
+            raise InvalidInputError(
+                "query must be a non-empty MONDO id, label, or xref.", field="query"
+            )
         match_type, mondo_id = self._classify_resolution(raw)
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
@@ -233,7 +237,11 @@ class MondoService:
         hits, total = self.repo.search(raw, limit=limit, include_obsolete=include_obsolete)
         results: list[dict[str, Any]] = []
         for hit in hits:
-            row: dict[str, Any] = {"mondo_id": hit["mondo_id"], "name": hit["name"], "score": hit["score"]}
+            row: dict[str, Any] = {
+                "mondo_id": hit["mondo_id"],
+                "name": hit["name"],
+                "score": hit["score"],
+            }
             if hit.get("definition"):
                 row["definition"] = hit["definition"]
             results.append(row)
@@ -246,7 +254,9 @@ class MondoService:
 
     # -- full record -----------------------------------------------------------
 
-    def get_disease(self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE) -> dict[str, Any]:
+    def get_disease(
+        self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE
+    ) -> dict[str, Any]:
         """Return the full disease record (hierarchy + grouped xrefs)."""
         mondo_id = self._resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
@@ -315,11 +325,15 @@ class MondoService:
             "mondo_version": self._mondo_version(),
         }
 
-    def get_parents(self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE) -> dict[str, Any]:
+    def get_parents(
+        self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE
+    ) -> dict[str, Any]:
         """Return the immediate parents of a term."""
         return self._neighbours(term, kind="parents")
 
-    def get_children(self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE) -> dict[str, Any]:
+    def get_children(
+        self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE
+    ) -> dict[str, Any]:
         """Return the immediate children of a term."""
         return self._neighbours(term, kind="children")
 
@@ -343,7 +357,9 @@ class MondoService:
         """Reverse lookup: external CURIE -> MONDO terms that cross-reference it."""
         raw = (xref_id or "").strip()
         if not raw:
-            raise InvalidInputError("xref_id must be a non-empty CURIE like OMIM:143100.", field="xref_id")
+            raise InvalidInputError(
+                "xref_id must be a non-empty CURIE like OMIM:143100.", field="xref_id"
+            )
         normalized = normalize_xref(raw)
         if normalized is None:
             raise InvalidInputError(

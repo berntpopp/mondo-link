@@ -35,9 +35,7 @@ def test_schema_term_fts_is_virtual_fts5() -> None:
     conn = sqlite3.connect(":memory:")
     try:
         conn.executescript(load_schema_sql())
-        sql = conn.execute(
-            "SELECT sql FROM sqlite_master WHERE name = 'term_fts'"
-        ).fetchone()[0]
+        sql = conn.execute("SELECT sql FROM sqlite_master WHERE name = 'term_fts'").fetchone()[0]
     finally:
         conn.close()
     assert "VIRTUAL TABLE" in sql

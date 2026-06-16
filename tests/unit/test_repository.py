@@ -145,9 +145,7 @@ def _insert_graph(conn: sqlite3.Connection) -> None:
         (HD, RARE),
         (RARE, ROOT),
     ]
-    conn.executemany(
-        "INSERT INTO mondo_parent (mondo_id, parent_id) VALUES (?, ?)", parents
-    )
+    conn.executemany("INSERT INTO mondo_parent (mondo_id, parent_id) VALUES (?, ?)", parents)
     # mondo_closure incl. self-pairs.
     closure = [
         (ROOT, ROOT),
@@ -164,9 +162,7 @@ def _insert_graph(conn: sqlite3.Connection) -> None:
         (RARE, RARE),
         (RARE, ROOT),
     ]
-    conn.executemany(
-        "INSERT INTO mondo_closure (mondo_id, ancestor_id) VALUES (?, ?)", closure
-    )
+    conn.executemany("INSERT INTO mondo_closure (mondo_id, ancestor_id) VALUES (?, ?)", closure)
 
 
 def _insert_groupings(conn: sqlite3.Connection) -> None:
@@ -236,7 +232,12 @@ def test_get_term_parses_json(repo: MondoRepository) -> None:
     assert term is not None
     assert term["name"] == "Huntington disease"
     assert term["is_obsolete"] is False
-    assert term["synonyms"][0] == {"text": "HD", "scope": "EXACT", "type": None, "sources": ["OMIM"]}
+    assert term["synonyms"][0] == {
+        "text": "HD",
+        "scope": "EXACT",
+        "type": None,
+        "sources": ["OMIM"],
+    }
     assert term["subsets"] == ["gard_rare"]
     assert term["consider"] == []
 
@@ -254,9 +255,7 @@ def test_get_term_missing(repo: MondoRepository) -> None:
 
 
 def test_resolve_label_primary_and_synonym(repo: MondoRepository) -> None:
-    assert repo.resolve_label("HUNTINGTON DISEASE") == [
-        {"mondo_id": HD, "label_type": "primary"}
-    ]
+    assert repo.resolve_label("HUNTINGTON DISEASE") == [{"mondo_id": HD, "label_type": "primary"}]
     assert repo.resolve_label("HD") == [{"mondo_id": HD, "label_type": "exact_synonym"}]
 
 
