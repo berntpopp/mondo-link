@@ -25,8 +25,13 @@ _DEFAULT_DATA_DIR = _PROJECT_ROOT / "data"
 #: Monarch publishes the Mondo OBO release at this PURL.
 DEFAULT_OBO_URL = "http://purl.obolibrary.org/obo/mondo.obo"
 
-#: Monarch publishes the Mondo SSSOM cross-ontology mappings at this PURL.
-DEFAULT_SSSOM_URL = "http://purl.obolibrary.org/obo/mondo.sssom.tsv"
+#: Mondo publishes the consolidated SSSOM cross-ontology mappings in-repo. (The
+#: ``obo/mondo.sssom.tsv`` PURL 404s; the OBO already carries dbxrefs, so SSSOM
+#: is treated as a supplementary, optional source — see ``ingest.downloader``.)
+DEFAULT_SSSOM_URL = (
+    "https://raw.githubusercontent.com/monarch-initiative/mondo/master/"
+    "src/ontology/mappings/mondo.sssom.tsv"
+)
 
 
 class MondoDataConfig(BaseModel):
