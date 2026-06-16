@@ -235,9 +235,7 @@ def mondo_top_groupings(terms: dict[str, dict[str, Any]]) -> list[tuple[str, str
     groupings = [
         (mondo_id, term["name"])
         for mondo_id, term in terms.items()
-        if MONDO_ROOT in term.get("parents", [])
-        and not term.get("obsolete")
-        and term.get("name")
+        if MONDO_ROOT in term.get("parents", []) and not term.get("obsolete") and term.get("name")
     ]
     groupings.sort(key=lambda pair: pair[1].lower())
     return [(mondo_id, name, order) for order, (mondo_id, name) in enumerate(groupings)]

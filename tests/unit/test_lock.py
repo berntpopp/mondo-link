@@ -26,8 +26,9 @@ def test_build_lock_timeout_raises(tmp_path: Path) -> None:
     held = build_lock(tmp_path, timeout=5)
     held.__enter__()
     try:
-        with pytest.raises(DataUnavailableError), build_lock(
-            tmp_path, timeout=1, poll_interval=0.1
+        with (
+            pytest.raises(DataUnavailableError),
+            build_lock(tmp_path, timeout=1, poll_interval=0.1),
         ):
             pass
     finally:

@@ -55,7 +55,9 @@ def test_error_codes_are_the_seven_code_taxonomy() -> None:
 
 
 def test_project_capabilities_summary_vs_full() -> None:
-    full = cap.project_capabilities("full", tool_signatures={"resolve_disease": "resolve_disease(query)"})
+    full = cap.project_capabilities(
+        "full", tool_signatures={"resolve_disease": "resolve_disease(query)"}
+    )
     assert full["detail"] == "full"
     summary = cap.project_capabilities("summary", tool_signatures={})
     assert summary["detail"] == "summary"
