@@ -26,9 +26,7 @@ from mondo_link.mcp.tools._common import ResponseMode, TermStr
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-_ClosureLimit = Annotated[
-    int, Field(ge=1, le=1000, description="Max rows returned (default 200).")
-]
+_ClosureLimit = Annotated[int, Field(ge=1, le=1000, description="Max rows returned (default 200).")]
 
 
 def register_hierarchy_tools(mcp: FastMCP) -> None:
