@@ -17,7 +17,7 @@ import sqlite3
 from pathlib import Path
 from typing import Any
 
-from mondo_link.constants import PREDICATE_RANK
+from mondo_link.constants import NON_HUMAN_ANIMAL_ROOT, PREDICATE_RANK
 from mondo_link.exceptions import DataUnavailableError
 
 _FTS_TOKEN_RE = re.compile(r"[^\s\"]+")
@@ -249,6 +249,24 @@ class MondoRepository:
         ).fetchall()
         return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
+    def non_human_animal_ids(self, mondo_ids: list[str]) -> set[str]:
+        """Subset of ``mondo_ids`` that are the non-human-animal disease root or descend
+        from it (Mondo's veterinary branch). One closure query for the whole batch.
+
+        Relies on the closure carrying self-pairs (so the root itself is caught). Used
+        by the resolver's human-disease prior to demote livestock terms in fuzzy resolve.
+        """
+        ids = [m for m in mondo_ids if m]
+        if not ids:
+            return set()
+        placeholders = ", ".join("?" for _ in ids)
+        rows = self._conn.execute(
+            "SELECT DISTINCT c.mondo_id FROM mondo_closure c "  # noqa: S608
+            f"WHERE c.ancestor_id = ? AND c.mondo_id IN ({placeholders})",
+            (NON_HUMAN_ANIMAL_ROOT, *ids),
+        ).fetchall()
+        return {r["mondo_id"] for r in rows}
+
     # -- cross-references ------------------------------------------------------
 
     def xrefs_for(self, mondo_id: str, prefixes: list[str] | None = None) -> list[dict[str, Any]]:
@@ -276,11 +294,22 @@ class MondoRepository:
         ]
 
     def mondo_for_xref(self, xref_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
-        """MONDO terms that carry a mapping to the external ``xref_id`` CURIE."""
+        """MONDO terms cross-referencing ``xref_id`` -- ONE row per term (strongest predicate).
+
+        A term can map to the same external id via several rows (e.g. an OBO xref plus
+        an SSSOM mapping, or two predicates). ``GROUP BY mondo_id`` with a single
+        ``MIN(predicate_rank)`` keeps each term once, and -- per SQLite's bare-column
+        rule -- the predicate/origin/object_id come from that strongest-predicate row.
+        Collapsing here keeps the row count equal to :meth:`count_mondo_for_xref`, so the
+        truncation contract holds (``returned <= total``) and offset-paging advances by
+        whole terms rather than by mapping rows.
+        """
         rows = self._conn.execute(
-            "SELECT DISTINCT x.mondo_id, t.name, x.prefix, x.object_id, x.predicate, x.origin "  # noqa: S608
+            "SELECT x.mondo_id, t.name, x.prefix, x.object_id, x.predicate, x.origin, "  # noqa: S608
+            f"MIN({_PREDICATE_CASE}) AS prank "
             "FROM xref x JOIN term t ON t.mondo_id = x.mondo_id "
-            f"WHERE x.object_id_upper = ? ORDER BY {_PREDICATE_CASE}, t.name LIMIT ? OFFSET ?",
+            "WHERE x.object_id_upper = ? "
+            "GROUP BY x.mondo_id ORDER BY prank, t.name LIMIT ? OFFSET ?",
             (xref_id.upper(), limit, offset),
         ).fetchall()
         return [

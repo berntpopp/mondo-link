@@ -185,6 +185,12 @@ def _insert_xrefs(conn: sqlite3.Connection) -> None:
         # OMIM:143100 also referenced (closeMatch) by NEURODEGEN -> exercises
         # mondo_for_xref ordering: exactMatch (HD) must precede closeMatch (NEURODEGEN).
         (NEURODEGEN, "OMIM", "OMIM:143100", "closeMatch", "sssom", "MONDO:relatedMatch"),
+        # OMIM:609300 maps to ONE term (NEURODEGEN) via TWO rows: an OBO xref
+        # (equivalentTo) and an SSSOM mapping (exactMatch). resolve_xref must collapse
+        # these to a single row (strongest predicate) so returned never exceeds the
+        # distinct-term total.
+        (NEURODEGEN, "OMIM", "OMIM:609300", "equivalentTo", "obo_xref", None),
+        (NEURODEGEN, "OMIM", "OMIM:609300", "exactMatch", "sssom", "MONDO:exactMatch"),
     ]
     conn.executemany(
         "INSERT INTO xref (mondo_id, prefix, object_id, object_id_upper, predicate, origin, "
@@ -396,10 +402,59 @@ def test_mondo_for_xref_unknown(repo: MondoRepository) -> None:
     assert repo.mondo_for_xref("OMIM:000000", limit=10) == []
 
 
+def test_mondo_for_xref_dedups_multi_predicate_rows_to_one_per_term(
+    repo: MondoRepository,
+) -> None:
+    # OMIM:609300 maps to NEURODEGEN via both an OBO xref (equivalentTo) and an SSSOM
+    # mapping (exactMatch). The reverse lookup must return ONE row (strongest predicate)
+    # so the row count matches the distinct-term count it is paged against.
+    matches = repo.mondo_for_xref("OMIM:609300", limit=10)
+    assert [m["mondo_id"] for m in matches] == [NEURODEGEN]
+    assert matches[0]["predicate"] == "exactMatch"  # strongest of the two rows
+    assert len(matches) == repo.count_mondo_for_xref("OMIM:609300") == 1
+
+
+def test_non_human_animal_ids_flags_root_and_descendants(tmp_path: Path) -> None:
+    # The non-human-animal disease branch (root + descendants, via the closure table)
+    # is the human-disease prior's signal for demoting veterinary terms in fuzzy resolve.
+    from mondo_link.constants import NON_HUMAN_ANIMAL_ROOT
+
+    human = "MONDO:0007947"
+    pig = "MONDO:1011155"
+    db = tmp_path / "nh.sqlite"
+    conn = sqlite3.connect(db)
+    try:
+        conn.executescript(load_schema_sql())
+        # closure carries self-pairs (mondo_id == ancestor_id); `pig` descends from the
+        # non-human root while `human` does not.
+        conn.executemany(
+            "INSERT INTO mondo_closure (mondo_id, ancestor_id) VALUES (?, ?)",
+            [
+                (NON_HUMAN_ANIMAL_ROOT, NON_HUMAN_ANIMAL_ROOT),
+                (pig, pig),
+                (pig, NON_HUMAN_ANIMAL_ROOT),
+                (human, human),
+            ],
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    repository = MondoRepository(db)
+    try:
+        assert repository.non_human_animal_ids([human, pig, NON_HUMAN_ANIMAL_ROOT]) == {
+            pig,
+            NON_HUMAN_ANIMAL_ROOT,
+        }
+        assert repository.non_human_animal_ids([human]) == set()
+        assert repository.non_human_animal_ids([]) == set()
+    finally:
+        repository.close()
+
+
 def test_counts(repo: MondoRepository) -> None:
     counts = repo.counts()
     assert counts["terms"] == 6
     assert counts["obsolete"] == 1
-    assert counts["xrefs"] == 5
+    assert counts["xrefs"] == 7  # +2 dual-mapping rows for OMIM:609300
     assert counts["closure"] == 13
     assert counts["top_groupings"] == 2

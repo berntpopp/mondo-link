@@ -227,6 +227,17 @@ def test_resolve_xref_total_is_accurate_for_paging(service: MondoService) -> Non
     assert page["next_offset"] == 1
 
 
+def test_resolve_xref_returned_never_exceeds_total(service: MondoService) -> None:
+    # A term reachable via two mapping rows (equivalentTo + exactMatch) for the same
+    # external id must surface ONCE: returned == total (the documented contract).
+    res = service.resolve_xref("OMIM:609300")
+    assert res["total"] == 1
+    assert res["returned"] == 1
+    assert res["returned"] <= res["total"]
+    assert res["truncated"] is False
+    assert res["matches"][0]["predicate"] == "exactMatch"
+
+
 def test_get_descendants_page_fields(service: MondoService) -> None:
     res = service.get_descendants("MONDO:0000001", limit=10)
     ids = {d["mondo_id"] for d in res["descendants"]}

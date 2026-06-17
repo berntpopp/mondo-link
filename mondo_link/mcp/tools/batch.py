@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING, Annotated, Any
 
 from pydantic import Field
 
+from mondo_link.constants import MAX_BATCH_ITEMS
 from mondo_link.exceptions import InvalidInputError
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, classify_exception, run_mcp_tool
@@ -23,8 +24,9 @@ from mondo_link.mcp.tools._common import FieldsArg, ResponseMode
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-#: Hard cap on items per batch call (bounds token blowup / abuse).
-MAX_BATCH = 50
+#: Hard cap on items per batch call (bounds token blowup / abuse). Defined in
+#: ``constants`` so capabilities.limits advertises the exact value enforced here.
+MAX_BATCH = MAX_BATCH_ITEMS
 
 
 def _require_batch(items: list[str], field: str) -> None:
