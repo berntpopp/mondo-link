@@ -85,3 +85,86 @@ def test_shape_hit_modes() -> None:
     assert set(shaping.shape_hit(hit, "minimal")) == {"mondo_id", "name"}
     assert "definition" not in shaping.shape_hit(hit, "compact")  # None dropped
     assert shaping.shape_hit(hit, "full") == hit
+
+
+def _hit(definition: str | None = None) -> dict:
+    return {
+        "mondo_id": "MONDO:0007947",
+        "name": "Marfan syndrome",
+        "score": 13.0,
+        "definition": definition,
+    }
+
+
+def test_search_hit_minimal_keeps_id_name_score() -> None:
+    out = shaping.shape_search_hit(_hit("A disorder."), "minimal")
+    assert out == {"mondo_id": "MONDO:0007947", "name": "Marfan syndrome", "score": 13.0}
+
+
+def test_search_hit_compact_truncates_definition_to_snippet() -> None:
+    long_def = "A disorder of the connective tissue. " * 20  # ~740 chars
+    out = shaping.shape_search_hit(_hit(long_def), "compact", snippet_chars=140)
+    assert "definition" not in out  # full definition is reserved for standard/full
+    snippet = out["definition_snippet"]
+    assert len(snippet) <= 141  # <= snippet_chars (+ trailing ellipsis char)
+    assert snippet.endswith("…")  # truncated marker
+    assert not snippet[:-1].endswith(" ")  # trimmed at a word boundary
+    assert {"mondo_id", "name", "score", "definition_snippet"} == set(out)
+
+
+def test_search_hit_compact_short_definition_not_ellipsized() -> None:
+    out = shaping.shape_search_hit(_hit("A short def."), "compact", snippet_chars=140)
+    assert out["definition_snippet"] == "A short def."
+    assert "definition" not in out
+
+
+def test_search_hit_compact_no_definition_omits_snippet() -> None:
+    out = shaping.shape_search_hit(_hit(None), "compact")
+    assert "definition_snippet" not in out
+    assert set(out) == {"mondo_id", "name", "score"}
+
+
+def test_search_hit_standard_and_full_keep_full_definition() -> None:
+    long_def = "A disorder of the connective tissue. " * 20
+    for mode in ("standard", "full"):
+        out = shaping.shape_search_hit(_hit(long_def), mode)
+        assert out["definition"] == long_def
+        assert "definition_snippet" not in out
+
+
+def _disease() -> dict:
+    return {
+        "mondo_id": "MONDO:0007739",
+        "name": "Huntington disease",
+        "definition": "A neurodegenerative disorder.",
+        "mondo_version": "2026-06-01",
+        "parents": [{"mondo_id": "MONDO:0005559"}],
+        "xrefs": {
+            "OMIM": [{"object_id": "OMIM:143100"}],
+            "DOID": [{"object_id": "DOID:12858"}],
+        },
+    }
+
+
+def test_select_fields_none_is_identity() -> None:
+    rec = _disease()
+    assert shaping.select_fields(rec, None) is rec
+    assert shaping.select_fields(rec, []) is rec
+
+
+def test_select_fields_keeps_anchors_plus_requested() -> None:
+    out = shaping.select_fields(_disease(), ["definition"])
+    assert set(out) == {"mondo_id", "name", "mondo_version", "definition"}
+    assert out["definition"] == "A neurodegenerative disorder."
+
+
+def test_select_fields_dotted_keeps_only_subgroup() -> None:
+    out = shaping.select_fields(_disease(), ["xrefs.OMIM"])
+    assert set(out) == {"mondo_id", "name", "mondo_version", "xrefs"}
+    assert set(out["xrefs"]) == {"OMIM"}  # DOID dropped
+    assert out["xrefs"]["OMIM"][0]["object_id"] == "OMIM:143100"
+
+
+def test_select_fields_unknown_field_is_skipped() -> None:
+    out = shaping.select_fields(_disease(), ["nope", "xrefs.NOTAPREFIX"])
+    assert set(out) == {"mondo_id", "name", "mondo_version"}

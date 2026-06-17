@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Annotated, Any, Literal
 from pydantic import Field
 
 from mondo_link.buildinfo import build_info
+from mondo_link.mcp import metrics
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.capabilities import collect_tool_signatures, project_capabilities
 from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
@@ -61,8 +62,9 @@ def register_discovery_tools(mcp: FastMCP) -> None:
         description=(
             "Report the local Mondo index status: whether the data is built, the "
             "loaded Mondo release version, term/obsolete/closure/xref/mapping counts, "
-            "schema version, and when it was built. Use this to confirm freshness or "
-            "diagnose a data_unavailable error. "
+            "schema version, and when it was built, plus a runtime block "
+            "(request/error counts and latency percentiles p50/p95/p99). Use this to "
+            "confirm freshness or diagnose a data_unavailable error. "
             "Signature: get_diagnostics()."
         ),
     )
@@ -70,6 +72,7 @@ def register_discovery_tools(mcp: FastMCP) -> None:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_diagnostics()
             payload["build"] = build_info()
+            payload["runtime"] = metrics.snapshot()
             payload.setdefault("_meta", {})["next_commands"] = (
                 [cmd("resolve_disease", query="Marfan syndrome")]
                 if payload.get("index_built")

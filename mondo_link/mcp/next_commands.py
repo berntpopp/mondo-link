@@ -22,6 +22,29 @@ def widen_cmd(tool: str, base_args: dict[str, Any], total: int, ceiling: int) ->
     return cmd(tool, **{**base_args, "limit": min(total, ceiling)})
 
 
+def page_cmd(tool: str, base_args: dict[str, Any], next_offset: int) -> dict[str, Any]:
+    """A ready-to-call step that fetches the NEXT page (advance ``offset`` forward).
+
+    Preferred over ``widen_cmd`` for large closures: it never re-sends rows the
+    client already has, where raising ``limit`` re-fetches the whole head.
+    """
+    return cmd(tool, **{**base_args, "offset": next_offset})
+
+
+def _more_steps(
+    tool: str, base_args: dict[str, Any], payload: dict[str, Any], ceiling: int
+) -> list[dict[str, Any]]:
+    """Forward-page step (if any) then a widen step, for a truncated list payload."""
+    if not payload.get("truncated"):
+        return []
+    steps: list[dict[str, Any]] = []
+    next_offset = payload.get("next_offset")
+    if next_offset is not None:
+        steps.append(page_cmd(tool, base_args, int(next_offset)))
+    steps.append(widen_cmd(tool, base_args, int(payload.get("total", 0)), ceiling))
+    return steps
+
+
 def default_error_next_commands(
     tool: str, error_code: str, arguments: dict[str, Any]
 ) -> list[dict[str, Any]]:
@@ -77,10 +100,7 @@ def after_search(query: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
     top = hits[0].get("mondo_id")
     if top:
         steps.append(cmd("get_disease", term=top))
-    if payload.get("truncated"):
-        steps.append(
-            widen_cmd("search_diseases", {"query": query}, int(payload.get("total", 0)), 200)
-        )
+    steps += _more_steps("search_diseases", {"query": query}, payload, 200)
     return steps or [cmd("get_server_capabilities")]
 
 
@@ -100,13 +120,7 @@ def after_ancestors(payload: dict[str, Any]) -> list[dict[str, Any]]:
     mondo_id = payload.get("mondo_id")
     if not mondo_id:
         return [cmd("get_server_capabilities")]
-    steps: list[dict[str, Any]] = []
-    if payload.get("truncated"):
-        steps.append(
-            widen_cmd(
-                "get_disease_ancestors", {"term": mondo_id}, int(payload.get("total", 0)), 1000
-            )
-        )
+    steps = _more_steps("get_disease_ancestors", {"term": mondo_id}, payload, 1000)
     steps += [
         cmd("get_disease_parents", term=mondo_id),
         cmd("get_disease_descendants", term=mondo_id),
@@ -119,13 +133,7 @@ def after_descendants(payload: dict[str, Any]) -> list[dict[str, Any]]:
     mondo_id = payload.get("mondo_id")
     if not mondo_id:
         return [cmd("get_server_capabilities")]
-    steps: list[dict[str, Any]] = []
-    if payload.get("truncated"):
-        steps.append(
-            widen_cmd(
-                "get_disease_descendants", {"term": mondo_id}, int(payload.get("total", 0)), 1000
-            )
-        )
+    steps = _more_steps("get_disease_descendants", {"term": mondo_id}, payload, 1000)
     steps += [
         cmd("get_disease_children", term=mondo_id),
         cmd("get_disease_ancestors", term=mondo_id),
@@ -171,12 +179,8 @@ def after_resolve_xref(payload: dict[str, Any]) -> list[dict[str, Any]]:
     top = matches[0].get("mondo_id")
     if top:
         steps.append(cmd("get_disease", term=top))
-    if payload.get("truncated") and payload.get("xref_id"):
-        steps.append(
-            widen_cmd(
-                "resolve_xref", {"xref_id": payload["xref_id"]}, int(payload.get("total", 0)), 200
-            )
-        )
+    if payload.get("xref_id"):
+        steps += _more_steps("resolve_xref", {"xref_id": payload["xref_id"]}, payload, 200)
     return steps or [cmd("get_server_capabilities")]
 
 

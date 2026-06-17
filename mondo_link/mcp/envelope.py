@@ -27,6 +27,7 @@ from mondo_link.exceptions import (
     ServiceUnavailableError,
     WithdrawnEntryError,
 )
+from mondo_link.mcp import metrics
 from mondo_link.mcp.next_commands import cmd, default_error_next_commands, withdrawn_recovery
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,16 @@ class McpToolError(Exception):
 
 def _request_id() -> str:
     return uuid.uuid4().hex[:12]
+
+
+def _capabilities_version() -> str | None:
+    """Cached discovery-contract hash for the ``_meta`` echo (never raises)."""
+    try:
+        from mondo_link.mcp.capabilities import capabilities_version
+
+        return capabilities_version()
+    except Exception:  # pragma: no cover - the _meta echo must never break a tool
+        return None
 
 
 def _safe_message(exc: BaseException) -> str:
@@ -123,6 +134,16 @@ def _error_envelope(exc: BaseException, context: McpErrorContext) -> dict[str, A
         envelope["withdrawn_status"] = exc.withdrawn_status
         envelope["replaced_by"] = exc.replaced_by
         envelope["_meta"]["next_commands"] = withdrawn_recovery(exc.replaced_by)
+        return envelope
+    if isinstance(exc, NotFoundError) and exc.suggestions:
+        envelope["candidates"] = exc.suggestions
+        steps = [
+            cmd("get_disease", term=s["mondo_id"]) for s in exc.suggestions[:3] if s.get("mondo_id")
+        ]
+        query = str(context.arguments.get("term", "") or context.arguments.get("query", ""))
+        if query:
+            steps.append(cmd("search_diseases", query=query))
+        envelope["_meta"]["next_commands"] = steps or [cmd("get_server_capabilities")]
         return envelope
     if context.fallback is not None:
         envelope["_meta"]["next_commands"] = [context.fallback]
@@ -192,6 +213,13 @@ def build_arg_error_envelope(
     }
 
 
+def _stamp_capabilities_version(meta: dict[str, Any]) -> None:
+    """Add the cached capabilities_version to a ``_meta`` block when available."""
+    version = _capabilities_version()
+    if version:
+        meta["capabilities_version"] = version
+
+
 async def run_mcp_tool(
     tool_name: str,
     call: Callable[[], Awaitable[dict[str, Any]]],
@@ -203,19 +231,25 @@ async def run_mcp_tool(
     start = time.perf_counter()
     try:
         result = await call()
+        elapsed = int((time.perf_counter() - start) * 1000)
         if isinstance(result, dict):
-            result.setdefault("success", True)
             existing_meta: dict[str, Any] = result.get("_meta") or {}
+            success = bool(result.setdefault("success", True))
             result["_meta"] = {
                 **existing_meta,
                 "tool": tool_name,
                 "request_id": _request_id(),
-                "elapsed_ms": int((time.perf_counter() - start) * 1000),
+                "elapsed_ms": elapsed,
             }
+            _stamp_capabilities_version(result["_meta"])
+            metrics.record(tool_name, elapsed, ok=success)
         return result
     except Exception as exc:  # broad catch is the error-boundary contract
+        elapsed = int((time.perf_counter() - start) * 1000)
         envelope = _error_envelope(exc, ctx)
-        envelope["_meta"]["elapsed_ms"] = int((time.perf_counter() - start) * 1000)
+        envelope["_meta"]["elapsed_ms"] = elapsed
+        _stamp_capabilities_version(envelope["_meta"])
+        metrics.record(tool_name, elapsed, ok=False)
         logger.warning(
             "mcp_tool_error tool=%s code=%s exc=%s",
             tool_name,

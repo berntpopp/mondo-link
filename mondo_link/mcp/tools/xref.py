@@ -11,7 +11,7 @@ from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
 from mondo_link.mcp.next_commands import after_cross_ontology, after_resolve_xref
 from mondo_link.mcp.schemas import CROSS_ONTOLOGY_SCHEMA, RESOLVE_XREF_SCHEMA
 from mondo_link.mcp.service_adapters import get_mondo_service
-from mondo_link.mcp.tools._common import ResponseMode, TermStr, XrefIdStr
+from mondo_link.mcp.tools._common import FieldsArg, ResponseMode, TermStr, XrefIdStr
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -30,18 +30,23 @@ def register_xref_tools(mcp: FastMCP) -> None:
             "Resolve an external cross-reference CURIE (OMIM/Orphanet/DOID/NCIT/UMLS/"
             "MeSH/MedGen/SNOMED/GARD) back to the Mondo term(s) that map to it, ranked "
             "by mapping predicate (exactMatch > equivalentTo > closeMatch > ...). "
-            "Returns matches[] plus a truncation block. "
-            "Signature: resolve_xref(xref_id, limit=, response_mode=)."
+            "Returns matches[] plus a pagination block {total, returned, limit, "
+            "offset, truncated, next_offset}; when truncated, next_commands carries a "
+            "forward-page step (offset). "
+            "Signature: resolve_xref(xref_id, limit=, offset=, response_mode=)."
         ),
     )
     async def resolve_xref(
         xref_id: XrefIdStr,
         limit: Annotated[int, Field(ge=1, le=1000, description="Max matches (default 50).")] = 50,
+        offset: Annotated[
+            int, Field(ge=0, description="Rows to skip for forward paging (default 0).")
+        ] = 0,
         response_mode: ResponseMode = "compact",
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().resolve_xref(
-                xref_id, limit=limit, response_mode=response_mode
+                xref_id, limit=limit, offset=offset, response_mode=response_mode
             )
             payload.setdefault("_meta", {})["next_commands"] = after_resolve_xref(payload)
             return payload
@@ -62,8 +67,9 @@ def register_xref_tools(mcp: FastMCP) -> None:
             "List a Mondo term's cross-references to other ontologies, grouped by "
             "target prefix (OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD), each "
             "with its mapping predicate and origin (obo_xref|sssom). Optionally "
-            "restrict to a subset of prefixes. "
-            "Signature: map_cross_ontology(term, prefixes=, response_mode=)."
+            "restrict to a subset of prefixes, or pass fields=['mappings.OMIM'] for a "
+            "sparse projection. "
+            "Signature: map_cross_ontology(term, prefixes=, response_mode=, fields=)."
         ),
     )
     async def map_cross_ontology(
@@ -73,10 +79,11 @@ def register_xref_tools(mcp: FastMCP) -> None:
             Field(description="Restrict to these target prefixes, e.g. ['OMIM','ORPHA']."),
         ] = None,
         response_mode: ResponseMode = "compact",
+        fields: FieldsArg = None,
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().map_cross_ontology(
-                term, prefixes=prefixes, response_mode=response_mode
+                term, prefixes=prefixes, response_mode=response_mode, fields=fields
             )
             payload.setdefault("_meta", {})["next_commands"] = after_cross_ontology(payload)
             return payload
