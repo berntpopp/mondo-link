@@ -20,6 +20,12 @@ def test_extract_git_sha_missing_returns_none() -> None:
 def test_extract_git_sha_ignores_unknown_sentinel() -> None:
     # buildinfo emits "unknown" when no sha is resolvable -- treat as absent.
     assert extract_git_sha({"build": {"git_sha": "unknown"}}) is None
+    assert extract_git_sha({"git_sha": "unknown"}) is None
+
+
+def test_extract_git_sha_reads_top_level_health_shape() -> None:
+    # The REST /health endpoint carries git_sha at the top level (no "build" wrapper).
+    assert extract_git_sha({"status": "ok", "git_sha": "abc1234"}) == "abc1234"
 
 
 @pytest.mark.parametrize(

@@ -1,10 +1,10 @@
 """Post-deploy guard: fail if the live server's build sha != local HEAD.
 
-The deployed sha is read from a ``get_diagnostics`` payload (JSON on stdin or a
-file). The operator obtains that payload from the running server (REST
-``/diagnostics`` or an MCP ``get_diagnostics`` call) and pipes it in. Keeping the
-fetch out of this script makes the comparison pure and unit-testable; the I/O
-shell is a thin ``main``.
+The deployed sha is read from a diagnostics-shaped JSON (on stdin or a file). The
+operator obtains it from the running server -- the REST ``/health`` endpoint (sha
+at the top level) or an MCP ``get_diagnostics`` call (sha under ``build``) -- and
+pipes it in. Keeping the fetch out of this script makes the comparison pure and
+unit-testable; the I/O shell is a thin ``main``.
 
 This is the recurrence guard for the "stale broken build" class of failure: a
 green local tree whose fixes never reached the live container. Wire it as a
@@ -25,15 +25,17 @@ _UNKNOWN_SHA = "unknown"
 def extract_git_sha(diagnostics: dict[str, Any]) -> str | None:
     """Return the deployed build git sha from a diagnostics payload, or ``None``.
 
-    Returns ``None`` for a missing/empty sha and for the ``"unknown"`` sentinel
-    (which buildinfo emits when it cannot resolve a commit), so an unresolved
-    build is treated as *not fresh* rather than spuriously matching.
+    Handles both live surfaces: the MCP/REST ``get_diagnostics`` payload nests it
+    under ``build.git_sha``, while the REST ``/health`` endpoint carries it at the
+    top level. Returns ``None`` for a missing/empty sha and for the ``"unknown"``
+    sentinel (which buildinfo emits when it cannot resolve a commit), so an
+    unresolved build is treated as *not fresh* rather than spuriously matching.
     """
     build = diagnostics.get("build")
-    if isinstance(build, dict):
-        sha = build.get("git_sha")
-        if sha and str(sha) != _UNKNOWN_SHA:
-            return str(sha)
+    sha = build.get("git_sha") if isinstance(build, dict) else None
+    sha = sha or diagnostics.get("git_sha")  # REST /health shape (top-level)
+    if sha and str(sha) != _UNKNOWN_SHA:
+        return str(sha)
     return None
 
 
