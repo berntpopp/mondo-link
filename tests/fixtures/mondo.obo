@@ -13,11 +13,13 @@ def: "A disease is a disposition to undergo pathological processes." [MONDO:desi
 [Term]
 id: MONDO:0000002
 name: cardiovascular disorder
+synonym: "shared ambiguous disorder" EXACT []
 is_a: MONDO:0000001 ! disease or disorder
 
 [Term]
 id: MONDO:0000003
 name: nervous system disorder
+synonym: "shared ambiguous disorder" EXACT []
 is_a: MONDO:0000001 ! disease or disorder
 
 [Term]

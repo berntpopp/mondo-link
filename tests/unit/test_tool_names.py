@@ -13,6 +13,7 @@ from fastmcp import FastMCP
 
 from mondo_link.mcp.capabilities import TOOLS
 from mondo_link.mcp.tools import (
+    register_batch_tools,
     register_discovery_tools,
     register_disease_tools,
     register_hierarchy_tools,
@@ -30,6 +31,7 @@ def _build_mcp() -> FastMCP:
     register_disease_tools(mcp)
     register_hierarchy_tools(mcp)
     register_xref_tools(mcp)
+    register_batch_tools(mcp)
     return mcp
 
 

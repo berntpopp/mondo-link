@@ -51,6 +51,8 @@ TOOLS: list[str] = [
     "get_disease_children",
     "resolve_xref",
     "map_cross_ontology",
+    "resolve_disease_batch",
+    "get_disease_batch",
 ]
 
 _SUMMARY_KEYS: tuple[str, ...] = (
@@ -185,7 +187,9 @@ def build_capabilities() -> dict[str, Any]:
         ),
         "match_type_semantics": (
             "resolve_disease.match_type is one of mondo_id | primary | exact_synonym "
-            "| related_synonym | xref (strongest first)."
+            "| related_synonym | fuzzy | xref (strongest first). 'fuzzy' is a "
+            "conservative FTS fallback returned only for a near-miss/acronym label "
+            "with no exact match; a near-tie returns ambiguous_query instead."
         ),
         "predicate_ranking": (
             "Cross-references are ranked by mapping predicate, strongest first: "
@@ -197,6 +201,7 @@ def build_capabilities() -> dict[str, Any]:
             "term -> get_disease_ancestors / get_disease_descendants (transitive closure)",
             "external CURIE -> resolve_xref (xref -> Mondo)",
             "term -> map_cross_ontology (Mondo -> OMIM/Orphanet/DOID/...)",
+            "many labels/ids -> resolve_disease_batch / get_disease_batch (one round trip)",
         ],
         "not_found_contract": (
             "An id/label/xref with no term returns error_code 'not_found'. An "

@@ -15,8 +15,10 @@ import pytest
 from fastmcp import FastMCP
 
 from mondo_link.exceptions import NotFoundError
+from mondo_link.mcp.capabilities import TOOLS
 from mondo_link.mcp.service_adapters import reset_mondo_service, set_mondo_service
 from mondo_link.mcp.tools import (
+    register_batch_tools,
     register_discovery_tools,
     register_disease_tools,
     register_hierarchy_tools,
@@ -186,6 +188,7 @@ async def tools(fake: FakeService) -> dict[str, Any]:
     register_disease_tools(mcp)
     register_hierarchy_tools(mcp)
     register_xref_tools(mcp)
+    register_batch_tools(mcp)
     return {t.name: t for t in await mcp.list_tools()}
 
 
@@ -202,7 +205,7 @@ async def test_get_diagnostics(tools: dict[str, Any]) -> None:
 async def test_get_server_capabilities(tools: dict[str, Any]) -> None:
     result = await _call(tools, "get_server_capabilities")
     assert result["success"] is True
-    assert result["tool_count"] == 11
+    assert result["tool_count"] == len(TOOLS)
     assert isinstance(result["_meta"], dict)
 
 

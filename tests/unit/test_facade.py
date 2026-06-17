@@ -116,6 +116,18 @@ async def test_label_miss_embeds_top_hit_in_next_commands(facade: Any, structure
     assert first["arguments"]["term"] == _SGS
 
 
+async def test_resolve_ambiguous_envelope(facade: Any, structured: Any) -> None:
+    # An exact label shared by two distinct terms surfaces an ambiguous_query
+    # envelope with candidates and next_commands chaining to each get_disease.
+    payload = structured(
+        await facade.call_tool("resolve_disease", {"query": "shared ambiguous disorder"})
+    )
+    assert payload["success"] is False
+    assert payload["error_code"] == "ambiguous_query"
+    assert len({c["mondo_id"] for c in payload["candidates"]}) >= 2
+    assert payload["_meta"]["next_commands"][0]["tool"] == "get_disease"
+
+
 async def test_capabilities_lists_all_tools(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("get_server_capabilities", {}))
     assert payload["tool_count"] == len(TOOLS)
