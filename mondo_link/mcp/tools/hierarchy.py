@@ -67,7 +67,9 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "get_disease_ancestors",
             call,
-            context=McpErrorContext("get_disease_ancestors", arguments={"term": term}),
+            context=McpErrorContext(
+                "get_disease_ancestors", arguments={"term": term}, response_mode=response_mode
+            ),
         )
 
     @mcp.tool(
@@ -102,7 +104,9 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "get_disease_descendants",
             call,
-            context=McpErrorContext("get_disease_descendants", arguments={"term": term}),
+            context=McpErrorContext(
+                "get_disease_descendants", arguments={"term": term}, response_mode=response_mode
+            ),
         )
 
     @mcp.tool(
@@ -128,7 +132,9 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "get_disease_parents",
             call,
-            context=McpErrorContext("get_disease_parents", arguments={"term": term}),
+            context=McpErrorContext(
+                "get_disease_parents", arguments={"term": term}, response_mode=response_mode
+            ),
         )
 
     @mcp.tool(
@@ -154,5 +160,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "get_disease_children",
             call,
-            context=McpErrorContext("get_disease_children", arguments={"term": term}),
+            context=McpErrorContext(
+                "get_disease_children", arguments={"term": term}, response_mode=response_mode
+            ),
         )

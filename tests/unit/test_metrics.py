@@ -10,7 +10,7 @@ def test_empty_snapshot_is_zeroed() -> None:
     snap = metrics.snapshot()
     assert snap["requests"] == 0
     assert snap["errors"] == 0
-    assert snap["error_rate"] == 0.0
+    assert snap["error_rate"] is None  # no sample yet -> ratio withheld, not 0.0
     assert snap["latency_ms"]["p95"] == 0
     assert snap["per_tool"] == {}
 
@@ -31,15 +31,29 @@ def test_percentiles_and_counts() -> None:
     assert snap["per_tool"]["get_disease"]["requests"] == 100
 
 
-def test_error_rate_and_per_tool_errors() -> None:
+def test_error_rate_suppressed_below_min_sample() -> None:
+    # Over a tiny sample an error ratio reads as alarming noise; the raw counts are
+    # still reported, but the ratio is withheld until the sample is meaningful so a
+    # single early failure does not surface as "error_rate: 0.5".
     metrics.reset()
     metrics.record("resolve_xref", 5, ok=True)
     metrics.record("resolve_xref", 7, ok=False)
     snap = metrics.snapshot()
     assert snap["requests"] == 2
-    assert snap["errors"] == 1
-    assert snap["error_rate"] == 0.5
+    assert snap["errors"] == 1  # raw counts always reported
+    assert snap["error_rate"] is None  # ratio withheld until n >= the min sample
     assert snap["per_tool"]["resolve_xref"] == {"requests": 2, "errors": 1}
+
+
+def test_error_rate_reported_once_sample_is_meaningful() -> None:
+    metrics.reset()
+    for _ in range(18):
+        metrics.record("get_disease", 2, ok=True)
+    for _ in range(2):
+        metrics.record("get_disease", 2, ok=False)
+    snap = metrics.snapshot()
+    assert snap["requests"] == 20
+    assert snap["error_rate"] == 0.1  # 2/20, now that the sample is meaningful
 
 
 def test_latency_window_is_bounded() -> None:

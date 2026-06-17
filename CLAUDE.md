@@ -14,7 +14,9 @@ file only highlights the essentials.
   `data`/`services`) builds & reads the index and returns plain dicts; the MCP
   plane (`mcp/`) is domain-agnostic scaffolding where `run_mcp_tool` owns
   `success`/`_meta` and returns structured errors (never raised).
-- **Invariants:** every response carries `_meta.next_commands`; 7-code error
+- **Invariants:** every `compact`+ (default) response carries
+  `_meta.next_commands` (`minimal` opts out → `_meta` = `{tool, request_id}`);
+  7-code error
   taxonomy; each tool has `output_schema` + `READ_ONLY_OPEN_WORLD` and a first
   sentence ending `Signature: tool(args...)`; keep `capabilities.TOOLS` in sync;
   normalise ids in `identifiers.py`; cite the MONDO id + Mondo release version.

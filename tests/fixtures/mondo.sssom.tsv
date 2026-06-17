@@ -1,7 +1,7 @@
 # curie_map:
 #   MONDO: http://purl.obolibrary.org/obo/MONDO_
 #   mapping_set_id: https://w3id.org/mondo/mappings
-subject_id	predicate_id	object_id	mapping_justification	confidence
-MONDO:0008426	skos:exactMatch	OMIM:182212	semapv:LexicalMatching	0.95
-MONDO:0008426	skos:closeMatch	NCIT:C124840	semapv:LexicalMatching	0.8
-MONDO:0008426	skos:exactMatch	Orphanet:2462	semapv:ManualMappingCuration	1.0
+subject_id	predicate_id	object_id	object_label	mapping_justification	confidence
+MONDO:0008426	skos:exactMatch	OMIM:182212	SHPRINTZEN-GOLDBERG SYNDROME; SGS	semapv:LexicalMatching	0.95
+MONDO:0008426	skos:closeMatch	NCIT:C124840	Shprintzen-Goldberg Syndrome	semapv:LexicalMatching	0.8
+MONDO:0008426	skos:exactMatch	Orphanet:2462	Shprintzen-Goldberg syndrome	semapv:ManualMappingCuration	1.0

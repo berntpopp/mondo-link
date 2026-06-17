@@ -27,7 +27,11 @@ and cross-ontology mapping. It mirrors the sibling `mgi-link` stack/architecture
   structured errors. **7-code error taxonomy**: `invalid_input`, `not_found`,
   `ambiguous_query`, `data_unavailable`, `rate_limited`, `upstream_unavailable`,
   `internal_error`.
-- Every response carries `_meta.next_commands` (ready-to-call follow-ups).
+- Every `compact` (default) or richer response carries `_meta.next_commands`
+  (ready-to-call follow-ups); `minimal` is the explicit opt-out and returns only
+  `_meta = {tool, request_id}`. `_meta` verbosity is tiered by `response_mode`
+  (`_shape_meta`): `compact` keeps `next_commands` + `capabilities_version` but
+  drops the `elapsed_ms` echo; `standard`/`full` add `elapsed_ms`.
 - Every tool declares `output_schema` + `READ_ONLY_OPEN_WORLD` annotations, and
   its first description sentence is a discovery summary ending with
   `Signature: tool(args...)`.
@@ -38,8 +42,9 @@ and cross-ontology mapping. It mirrors the sibling `mgi-link` stack/architecture
 - `response_mode` ∈ `minimal | compact | standard | full`. List tools also carry a
   pagination block (`total`/`returned`/`limit`/`offset`/`truncated`/`next_offset`);
   when truncated, `_meta.next_commands` offers a forward-page step (advance `offset`).
-- Every `_meta` echoes `capabilities_version` (a hash of the discovery contract) so
-  warm clients can skip re-fetching `get_server_capabilities`.
+- `compact`+ `_meta` echoes `capabilities_version` (a hash of the discovery
+  contract) so warm clients can skip re-fetching `get_server_capabilities`
+  (omitted in `minimal`).
 - Keep `mcp/capabilities.py::TOOLS` in sync with the registered tool set
   (`tests/unit/test_tool_names.py` enforces this).
 - Identifiers are normalised in `identifiers.py` (`MONDO:NNNNNNN`; external

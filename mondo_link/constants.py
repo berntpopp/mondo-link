@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-#: Bumped whenever the on-disk SQLite schema changes incompatibly.
-SCHEMA_VERSION = 1
+#: Bumped whenever the on-disk SQLite schema changes. v2 added xref.object_label
+#: (the target term's human-readable name, from SSSOM); a rebuild populates it.
+SCHEMA_VERSION = 2
 
 #: The Mondo ontology root term ("disease or disorder").
 MONDO_ROOT = "MONDO:0000001"
