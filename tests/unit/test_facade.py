@@ -77,6 +77,35 @@ async def test_map_cross_ontology_groups_by_prefix(facade: Any, structured: Any)
     assert payload["count"] == sum(len(v) for v in payload["mappings"].values())
 
 
+async def test_wrong_type_argument_reports_type_not_arg_names(facade: Any, structured: Any) -> None:
+    # prefixes expects a list; passing a bare string is a *value/type* error on a
+    # KNOWN argument. The envelope must state the expected type + an example and
+    # must NOT dump the list of valid argument *names* (the old conflation).
+    payload = structured(
+        await facade.call_tool("map_cross_ontology", {"term": _SGS, "prefixes": "OMIM"})
+    )
+    assert payload["success"] is False
+    assert payload["error_code"] == "invalid_input"
+    assert payload["field"] == "prefixes"
+    assert "array" in payload["message"]
+    assert '["OMIM", "ORPHA"]' in payload["message"]  # concrete example shown
+    # allowed_values describes the SHAPE, never the argument-name list.
+    assert "term" not in payload["allowed_values"]
+    assert "response_mode" not in payload["allowed_values"]
+
+
+async def test_map_cross_ontology_carries_target_label(facade: Any, structured: Any) -> None:
+    # The target's human-readable name (from the SSSOM object_label) is attached so
+    # the agent need not make a second call to learn what OMIM:182212 *is*. OBO-only
+    # targets (DOID here) have no label and simply omit ``name``.
+    payload = structured(await facade.call_tool("map_cross_ontology", {"term": _SGS}))
+    omim = payload["mappings"]["OMIM"][0]
+    assert omim["object_id"] == "OMIM:182212"
+    assert omim["name"] == "SHPRINTZEN-GOLDBERG SYNDROME; SGS"
+    doid = payload["mappings"]["DOID"][0]
+    assert "name" not in doid  # OBO xref has no target label -> omitted, not null
+
+
 async def test_get_disease_sparse_fieldset(facade: Any, structured: Any) -> None:
     payload = structured(
         await facade.call_tool("get_disease", {"term": _SGS, "fields": ["xrefs.OMIM"]})
@@ -132,6 +161,35 @@ async def test_capabilities_lists_all_tools(facade: Any, structured: Any) -> Non
     payload = structured(await facade.call_tool("get_server_capabilities", {}))
     assert payload["tool_count"] == len(TOOLS)
     assert "2026-06-01" in (payload["mondo_version"] or "")
+
+
+async def test_meta_verbosity_tiers_by_response_mode(facade: Any, structured: Any) -> None:
+    # minimal: the caller opts out of guidance -> only the trace essentials, no
+    # next_commands / capabilities_version / elapsed_ms tax on every call.
+    minimal = structured(
+        await facade.call_tool(
+            "resolve_disease", {"query": "Shprintzen-Goldberg syndrome", "response_mode": "minimal"}
+        )
+    )
+    assert set(minimal["_meta"]) == {"tool", "request_id"}
+
+    # compact (default): keeps the workflow guidance + the warm-client cache key,
+    # but drops the elapsed_ms observability echo.
+    compact = structured(
+        await facade.call_tool("resolve_disease", {"query": "Shprintzen-Goldberg syndrome"})
+    )
+    assert compact["_meta"]["next_commands"]
+    assert "capabilities_version" in compact["_meta"]
+    assert "elapsed_ms" not in compact["_meta"]
+
+    # standard: full _meta incl. the elapsed_ms echo.
+    standard = structured(
+        await facade.call_tool(
+            "resolve_disease",
+            {"query": "Shprintzen-Goldberg syndrome", "response_mode": "standard"},
+        )
+    )
+    assert isinstance(standard["_meta"]["elapsed_ms"], int)
 
 
 async def test_every_meta_echoes_capabilities_version(facade: Any, structured: Any) -> None:

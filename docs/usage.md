@@ -5,8 +5,14 @@ _meta}` on success, or `{success: false, error_code, message, retryable,
 recovery_action, _meta}` on error. `_meta.next_commands` lists ready-to-call
 follow-ups — follow them rather than guessing. `response_mode` ∈ `minimal |
 compact | standard | full` (default `compact`). Every record payload echoes
-`mondo_version` for grounding, and every `_meta` echoes `capabilities_version`
-(diff it to skip re-fetching capabilities while unchanged).
+`mondo_version` for grounding.
+
+`_meta` verbosity is tiered by `response_mode` to control the per-call token
+cost: `minimal` returns only `{tool, request_id}`; `compact` (default) adds
+`next_commands` and `capabilities_version` (diff it to skip re-fetching
+capabilities while unchanged) but omits `elapsed_ms`; `standard`/`full` add
+`elapsed_ms`. Pass `response_mode="minimal"` for the leanest payload once you
+know the workflow; widen when you need the guidance or timings.
 
 ## Discovery
 

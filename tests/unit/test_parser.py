@@ -136,3 +136,6 @@ def test_sssom_predicate_and_normalization(sssom_text: str) -> None:
     assert all(r["subject_id"].startswith("MONDO:") for r in rows)
     # source = mapping_justification
     assert by_obj["OMIM:182212"]["source"] == "semapv:LexicalMatching"
+    # object_label carries the target term's human-readable name (saves a follow-up call)
+    assert by_obj["OMIM:182212"]["object_label"] == "SHPRINTZEN-GOLDBERG SYNDROME; SGS"
+    assert by_obj["ORPHA:2462"]["object_label"] == "Shprintzen-Goldberg syndrome"

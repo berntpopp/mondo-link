@@ -28,6 +28,13 @@ if TYPE_CHECKING:
 _MAX_LIMIT = 1000
 
 
+def _finalize_xref_entry(entry: dict[str, Any]) -> dict[str, Any]:
+    """Drop the ``predicates`` list when a target id has a single predicate (token-lean)."""
+    if len(entry["predicates"]) <= 1:
+        del entry["predicates"]
+    return entry
+
+
 class MondoService:
     def __init__(self, repository: MondoRepository | None) -> None:
         self._repo = repository
@@ -159,18 +166,39 @@ class MondoService:
         return select_fields(shape_disease(payload, response_mode), fields)
 
     def _grouped_xrefs(self, mondo_id: str, prefixes: list[str] | None = None) -> dict[str, Any]:
-        """Group cross-references by prefix (predicate-ranked within each)."""
-        grouped: dict[str, list[dict[str, Any]]] = {}
+        """Group cross-references by prefix, ONE entry per target id.
+
+        A single target id can be asserted by several rows (an OBO xref plus an SSSOM
+        mapping, or two predicates). Rows arrive predicate-ranked (strongest first), so
+        the first row for an id sets the primary ``predicate``/``origin``/``source`` (and
+        ``name`` when the target label is known); any further predicates collect into a
+        ``predicates`` list (only when there is more than one). Collapsing here keeps the
+        payload token-lean -- the common case is one entry, with multiplicity surfaced
+        only when it exists -- and drops the wasteful ``source: null`` of OBO xrefs.
+        """
+        grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for xref in self.repo.xrefs_for(mondo_id, prefixes):
-            grouped.setdefault(xref["prefix"], []).append(
-                {
-                    "object_id": xref["object_id"],
-                    "predicate": xref["predicate"],
-                    "origin": xref["origin"],
-                    "source": xref["source"],
-                }
-            )
-        return grouped
+            bucket = grouped.setdefault(xref["prefix"], {})
+            entry = bucket.get(xref["object_id"])
+            if entry is None:
+                entry = {"object_id": xref["object_id"], "predicate": xref["predicate"]}
+                label = xref.get("object_label")
+                if label:
+                    entry["name"] = label
+                entry["origin"] = xref["origin"]
+                if xref.get("source"):
+                    entry["source"] = xref["source"]
+                entry["predicates"] = [xref["predicate"]]
+                bucket[xref["object_id"]] = entry
+            else:
+                if xref["predicate"] not in entry["predicates"]:
+                    entry["predicates"].append(xref["predicate"])
+                if "name" not in entry and xref.get("object_label"):
+                    entry["name"] = xref["object_label"]
+        return {
+            prefix: [_finalize_xref_entry(entry) for entry in bucket.values()]
+            for prefix, bucket in grouped.items()
+        }
 
     # -- hierarchy -------------------------------------------------------------
 

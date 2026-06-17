@@ -17,6 +17,11 @@ from typing import Any
 #: counters (requests/errors) are cumulative for the process lifetime.
 _MAX_SAMPLES = 1024
 
+#: Minimum request count before ``error_rate`` is reported. Below this the ratio is
+#: withheld (``None``): an error or two over a handful of calls reads as alarming
+#: noise rather than signal. Raw ``requests``/``errors`` counts are always reported.
+_ERROR_RATE_MIN_SAMPLE = 20
+
 
 def _percentile(sorted_vals: list[int], q: float) -> int:
     """Nearest-rank percentile of a pre-sorted list (0 for an empty window)."""
@@ -55,10 +60,11 @@ class _Metrics:
             errors = self._errors
             samples = sorted(self._latencies)
             per_tool = {k: dict(v) for k, v in sorted(self._per_tool.items())}
+        report_rate = requests >= _ERROR_RATE_MIN_SAMPLE
         return {
             "requests": requests,
             "errors": errors,
-            "error_rate": round(errors / requests, 4) if requests else 0.0,
+            "error_rate": round(errors / requests, 4) if report_rate else None,
             "latency_ms": {
                 "p50": _percentile(samples, 50),
                 "p95": _percentile(samples, 95),

@@ -47,7 +47,9 @@ def register_disease_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "resolve_disease",
             call,
-            context=McpErrorContext("resolve_disease", arguments={"query": query}),
+            context=McpErrorContext(
+                "resolve_disease", arguments={"query": query}, response_mode=response_mode
+            ),
         )
 
     @mcp.tool(
@@ -92,7 +94,9 @@ def register_disease_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "search_diseases",
             call,
-            context=McpErrorContext("search_diseases", arguments={"query": query}),
+            context=McpErrorContext(
+                "search_diseases", arguments={"query": query}, response_mode=response_mode
+            ),
         )
 
     @mcp.tool(
@@ -125,5 +129,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "get_disease",
             call,
-            context=McpErrorContext("get_disease", arguments={"term": term}),
+            context=McpErrorContext(
+                "get_disease", arguments={"term": term}, response_mode=response_mode
+            ),
         )

@@ -19,6 +19,7 @@ from mondo_link.exceptions import (
 from mondo_link.logging_config import configure_logging
 from mondo_link.mcp.arg_help import (
     describe_constraints,
+    describe_type_expectation,
     did_you_mean,
     normalize_alias_args,
     tool_signature,
@@ -48,15 +49,29 @@ async def _run(exc: BaseException) -> dict[str, Any]:
 # --- envelope: success ------------------------------------------------------
 
 
-async def test_success_envelope_injects_meta() -> None:
+async def test_success_meta_tiers_by_response_mode() -> None:
     async def call() -> dict[str, Any]:
         return {"mondo_id": "MONDO:0008426"}
 
-    result = await run_mcp_tool("get_disease", call, context=McpErrorContext("get_disease"))
-    assert result["success"] is True
-    assert result["_meta"]["tool"] == "get_disease"
-    assert isinstance(result["_meta"]["elapsed_ms"], int)
-    assert "request_id" in result["_meta"]
+    # compact (default): lean _meta -- request_id kept, but the elapsed_ms
+    # observability echo is dropped from the hot path (available via diagnostics).
+    compact = await run_mcp_tool("get_disease", call, context=McpErrorContext("get_disease"))
+    assert compact["success"] is True
+    assert compact["_meta"]["tool"] == "get_disease"
+    assert "request_id" in compact["_meta"]
+    assert "elapsed_ms" not in compact["_meta"]
+
+    # standard: full observability echo, incl. elapsed_ms.
+    std = await run_mcp_tool(
+        "get_disease", call, context=McpErrorContext("get_disease", response_mode="standard")
+    )
+    assert isinstance(std["_meta"]["elapsed_ms"], int)
+
+    # minimal: only the trace essentials (caller explicitly opted out of guidance).
+    minimal = await run_mcp_tool(
+        "get_disease", call, context=McpErrorContext("get_disease", response_mode="minimal")
+    )
+    assert set(minimal["_meta"]) == {"tool", "request_id"}
 
 
 # --- envelope: full 7-code taxonomy ----------------------------------------
@@ -222,6 +237,47 @@ def test_describe_constraints_variants() -> None:
     items = describe_constraints({"minItems": 1, "maxItems": 5})
     assert items is not None and "items" in items[1]
     assert describe_constraints({"type": "string"}) is None
+
+
+def test_describe_type_expectation_array_surfaces_example() -> None:
+    # A wrong *type* on a known arg must yield the expected type + a concrete
+    # example (so the message says "expects an array, e.g. [...]"), never the
+    # list of argument *names*.
+    schema = {
+        "anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}],
+        "examples": [["OMIM", "ORPHA"]],
+    }
+    result = describe_type_expectation(schema)
+    assert result is not None
+    allowed, human = result
+    assert "array" in human
+    assert '["OMIM", "ORPHA"]' in human  # the example is shown
+    assert allowed == ['["OMIM", "ORPHA"]']  # allowed carries the shape, not arg names
+
+
+def test_describe_type_expectation_scalar_without_example() -> None:
+    assert describe_type_expectation({"type": "string"}) == (["string"], "expects a string")
+    assert describe_type_expectation({"type": "integer"}) == (["integer"], "expects an integer")
+
+
+def test_describe_type_expectation_array_without_example_names_item_type() -> None:
+    # No example -> still names the array's item type, allowed carries the JSON type.
+    schema = {"anyOf": [{"type": "array", "items": {"type": "string"}}, {"type": "null"}]}
+    assert describe_type_expectation(schema) == (["array"], "expects an array of strings")
+
+
+def test_describe_type_expectation_example_from_anyof_branch() -> None:
+    # The concrete example may live on an anyOf branch rather than the outer schema.
+    schema = {"anyOf": [{"type": "string", "examples": ["MONDO:0008426"]}, {"type": "null"}]}
+    allowed, human = describe_type_expectation(schema)  # type: ignore[misc]
+    assert allowed == ['"MONDO:0008426"']
+    assert human == 'expects a string, e.g. "MONDO:0008426"'
+
+
+def test_describe_type_expectation_none_when_typeless() -> None:
+    # No determinable type (and no constraint) -> caller falls back to a name error.
+    assert describe_type_expectation({}) is None
+    assert describe_type_expectation({"description": "x"}) is None
 
 
 def test_tool_signature_orders_required_first() -> None:
