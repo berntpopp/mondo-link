@@ -51,6 +51,8 @@ TOOLS: list[str] = [
     "get_disease_children",
     "resolve_xref",
     "map_cross_ontology",
+    "resolve_disease_batch",
+    "get_disease_batch",
 ]
 
 _SUMMARY_KEYS: tuple[str, ...] = (
@@ -199,6 +201,7 @@ def build_capabilities() -> dict[str, Any]:
             "term -> get_disease_ancestors / get_disease_descendants (transitive closure)",
             "external CURIE -> resolve_xref (xref -> Mondo)",
             "term -> map_cross_ontology (Mondo -> OMIM/Orphanet/DOID/...)",
+            "many labels/ids -> resolve_disease_batch / get_disease_batch (one round trip)",
         ],
         "not_found_contract": (
             "An id/label/xref with no term returns error_code 'not_found'. An "

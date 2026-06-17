@@ -15,9 +15,10 @@ _ERROR_CODES = [
 ]
 
 
-def test_tools_list_has_11_unique_names() -> None:
-    assert len(cap.TOOLS) == 11
-    assert len(set(cap.TOOLS)) == 11
+def test_tools_list_has_13_unique_names() -> None:
+    # 11 core tools + 2 batch tools (resolve_disease_batch, get_disease_batch).
+    assert len(cap.TOOLS) == 13
+    assert len(set(cap.TOOLS)) == 13
 
 
 def test_build_capabilities_core_keys_present() -> None:
