@@ -189,3 +189,32 @@ CROSS_ONTOLOGY_SCHEMA = _envelope(
     prefixes_filter=_ARR_NULL,
     mondo_version=_STR_NULL,
 )
+
+#: One result row in a batch response: either a resolved/fetched record (``ok``
+#: true, plus the single-tool keys) or a per-item failure (``ok`` false, with its
+#: own ``error_code``/``message``). Permissive (``additionalProperties: true``) so
+#: a record's projected fields -- including a grouped ``xrefs`` object -- validate.
+_BATCH_ITEM = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "query": _STR,
+        "term": _STR,
+        "ok": _BOOL,
+        "mondo_id": _STR_NULL,
+        "name": _STR_NULL,
+        "match_type": _STR_NULL,
+        "error_code": _STR,
+        "message": _STR,
+    },
+}
+
+BATCH_RESOLVE_SCHEMA = _envelope(
+    count=_INT,
+    results={"type": "array", "items": _BATCH_ITEM},
+)
+
+BATCH_DISEASE_SCHEMA = _envelope(
+    count=_INT,
+    results={"type": "array", "items": _BATCH_ITEM},
+)
