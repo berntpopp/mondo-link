@@ -22,6 +22,7 @@ from pydantic import ValidationError
 
 from mondo_link.mcp.arg_help import (
     describe_constraints,
+    describe_type_expectation,
     did_you_mean,
     normalize_alias_args,
     tool_signature,
@@ -87,12 +88,15 @@ class ArgValidationMiddleware(Middleware):
         first = exc.errors(include_url=False)[0]
         loc = ".".join(str(p) for p in first.get("loc", ())) or "input"
         error_type = str(first.get("type", "value_error"))
-        # A real param with a bad *value* (range/enum) -> surface the constraint,
-        # not the list of argument names.
+        # A real param with a bad *value* -> surface the constraint (enum/range)
+        # or, failing that, the expected type + an example -- never the list of
+        # argument names (which is reserved for genuinely unknown arguments).
         constraints = None
         if loc in valid and error_type not in ("missing", "missing_argument"):
             field_schema = schema.get("properties", {}).get(loc, {})
-            constraints = describe_constraints(field_schema)
+            constraints = describe_constraints(field_schema) or describe_type_expectation(
+                field_schema
+            )
         suggestion = did_you_mean(loc, valid) if loc not in valid else None
         envelope = build_arg_error_envelope(
             tool_name=name,

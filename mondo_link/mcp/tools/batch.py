@@ -78,7 +78,9 @@ def register_batch_tools(mcp: FastMCP) -> None:
             return payload
 
         return await run_mcp_tool(
-            "resolve_disease_batch", call, context=McpErrorContext("resolve_disease_batch")
+            "resolve_disease_batch",
+            call,
+            context=McpErrorContext("resolve_disease_batch", response_mode=response_mode),
         )
 
     @mcp.tool(
@@ -118,5 +120,7 @@ def register_batch_tools(mcp: FastMCP) -> None:
             return payload
 
         return await run_mcp_tool(
-            "get_disease_batch", call, context=McpErrorContext("get_disease_batch")
+            "get_disease_batch",
+            call,
+            context=McpErrorContext("get_disease_batch", response_mode=response_mode),
         )

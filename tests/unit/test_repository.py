@@ -391,6 +391,34 @@ def test_xrefs_for_prefix_filter(repo: MondoRepository) -> None:
     assert prefixes == {"OMIM", "DOID"}
 
 
+def test_xrefs_for_exposes_object_label_key(repo: MondoRepository) -> None:
+    # xrefs_for reads the target label column (None here -- the fixture rows carry
+    # no label; the populated path is covered end-to-end in the facade SSSOM test).
+    xrefs = repo.xrefs_for(HD)
+    assert all("object_label" in x for x in xrefs)
+
+
+def test_xrefs_for_tolerates_missing_object_label_column(tmp_path: Path) -> None:
+    # A pre-existing index built before the object_label column was added must keep
+    # working: xrefs_for detects the absent column and yields object_label=None
+    # rather than raising "no such column" (deploy-safe against an old volume).
+    db = tmp_path / "old.sqlite"
+    _build_db(db)
+    conn = sqlite3.connect(db)
+    try:
+        conn.execute("ALTER TABLE xref DROP COLUMN object_label")
+        conn.commit()
+    finally:
+        conn.close()
+    repo = MondoRepository(db)
+    try:
+        xrefs = repo.xrefs_for(HD)
+        assert xrefs  # still returns rows
+        assert all(x["object_label"] is None for x in xrefs)
+    finally:
+        repo.close()
+
+
 def test_mondo_for_xref_orders_exact_before_close(repo: MondoRepository) -> None:
     matches = repo.mondo_for_xref("OMIM:143100", limit=10)
     assert [m["mondo_id"] for m in matches] == [HD, NEURODEGEN]

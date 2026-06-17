@@ -38,13 +38,19 @@ _ARR = {"type": "array"}
 _ARR_NULL = {"type": ["array", "null"]}
 _OBJ = {"type": "object", "additionalProperties": True}
 
-#: One cross-reference row (predicate-ranked) within a prefix group.
+#: One cross-reference target within a prefix group: ONE entry per object_id. The
+#: primary ``predicate``/``origin`` are the strongest mapping's; ``predicates`` lists
+#: all of them (strongest-first) only when a target is asserted more than once;
+#: ``name`` is the target term's label (SSSOM only) when known; ``source`` (the
+#: mapping justification) is present only when non-null.
 _XREF_ENTRY = {
     "type": "object",
     "additionalProperties": True,
     "properties": {
         "object_id": _STR,
+        "name": _STR,
         "predicate": _STR,
+        "predicates": _ARR,
         "origin": _STR,
         "source": _STR_NULL,
     },

@@ -242,12 +242,13 @@ def mondo_top_groupings(terms: dict[str, dict[str, Any]]) -> list[tuple[str, str
 
 
 def parse_mondo_sssom(text: str) -> Iterator[dict[str, Any]]:
-    """Yield ``{subject_id, object_id, predicate, source}`` rows for MONDO subjects.
+    """Yield ``{subject_id, object_id, predicate, source, object_label}`` rows.
 
     Skips blank / ``#``-comment lines, reads the TSV header, maps the SSSOM
     predicate to a short form, normalises the object id, and keeps only rows whose
     subject is a Mondo id. ``source`` is the ``mapping_justification`` column when
-    present.
+    present; ``object_label`` is the target term's human-readable name when present
+    (so cross-references can be returned with a label, not just an id).
     """
     lines = [ln for ln in text.splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
     if not lines:
@@ -268,4 +269,5 @@ def parse_mondo_sssom(text: str) -> Iterator[dict[str, Any]]:
             "object_id": object_id,
             "predicate": predicate,
             "source": (row.get("mapping_justification") or "").strip() or None,
+            "object_label": (row.get("object_label") or "").strip() or None,
         }

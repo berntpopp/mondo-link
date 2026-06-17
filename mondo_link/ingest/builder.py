@@ -165,7 +165,7 @@ def _load_obo_xrefs(conn: sqlite3.Connection, terms: dict[str, dict[str, Any]]) 
     """Insert xref rows from the OBO ``xref:`` lines (origin ``obo_xref``)."""
     xref_sql = (
         "INSERT INTO xref (mondo_id, prefix, object_id, object_id_upper, predicate, origin, "
-        "source) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "source, object_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     batch: list[tuple[Any, ...]] = []
     count = 0
@@ -181,6 +181,7 @@ def _load_obo_xrefs(conn: sqlite3.Connection, terms: dict[str, dict[str, Any]]) 
                     x["predicate"],
                     "obo_xref",
                     x.get("source"),
+                    None,  # OBO xrefs carry no target label
                 )
             )
             count += 1
@@ -197,7 +198,7 @@ def _load_sssom(conn: sqlite3.Connection, path: Path | None) -> int:
         return 0
     xref_sql = (
         "INSERT INTO xref (mondo_id, prefix, object_id, object_id_upper, predicate, origin, "
-        "source) VALUES (?, ?, ?, ?, ?, ?, ?)"
+        "source, object_label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"
     )
     batch: list[tuple[Any, ...]] = []
     count = 0
@@ -212,6 +213,7 @@ def _load_sssom(conn: sqlite3.Connection, path: Path | None) -> int:
                 row["predicate"],
                 "sssom",
                 row.get("source"),
+                row.get("object_label"),
             )
         )
         count += 1

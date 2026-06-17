@@ -6,6 +6,39 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Token-efficiency pass
+
+- **Tiered `_meta` by `response_mode` (token tax):** the per-call `_meta` block is
+  now sized to the requested verbosity instead of repeating everything on every
+  call. `minimal` returns only `{tool, request_id}`; `compact` (default) keeps
+  `next_commands` (workflow guidance) and `capabilities_version` (the warm-client
+  cache key) but drops the `elapsed_ms` echo; `standard`/`full` add `elapsed_ms`.
+  The universal `next_commands` invariant now holds for `compact` and richer;
+  `minimal` is the explicit opt-out (still recorded server-side / via diagnostics).
+- **Deduped `map_cross_ontology` targets:** multiple rows for the same target id
+  (an OBO xref plus an SSSOM mapping, or two predicates) collapse into **one entry
+  per `object_id`** carrying the strongest `predicate`/`origin` and a `predicates`
+  list (only when >1) — mirroring the `resolve_xref` fix. The wasteful
+  `source: null` of OBO xrefs is dropped. Fewer tokens, same information.
+- **Cross-reference target labels:** cross-references now carry the target term's
+  human-readable `name` when known (from the SSSOM `object_label`, persisted in a
+  new `xref.object_label` column; schema v2). So `map_cross_ontology` /
+  `get_disease.xrefs` answer "what *is* OMIM:182212" without a follow-up call;
+  OBO-only targets simply omit `name`. The repository reads the column tolerantly,
+  so an index built before v2 keeps working (label absent, no crash).
+- **Value-vs-name errors disambiguated:** a wrong **type** on a known argument (e.g.
+  `prefixes="OMIM"` instead of `["OMIM"]`) now reports the expected type with a
+  concrete example (`expects an array, e.g. ["OMIM", "ORPHA"]`) and carries the
+  shape in `allowed_values` — no longer dumping the list of valid argument *names*
+  (which is reserved for genuinely unknown arguments).
+- **`error_rate` noise suppressed:** `get_diagnostics.runtime.error_rate` is
+  withheld (`null`) until the sample is meaningful (≥20 requests); raw
+  `requests`/`errors` counts are always reported. A single early failure no longer
+  reads as an alarming ratio.
+- **Acronym resolution (verified + locked):** clinical acronyms that live as Mondo
+  synonyms (e.g. `ADPKD`) resolve via the exact-synonym path regardless of case;
+  regression coverage now guards the case-insensitive acronym path.
+
 ### Added
 
 - **Acronym / fuzzy resolution:** `resolve_disease` now falls back to a
