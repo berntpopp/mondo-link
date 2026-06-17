@@ -54,7 +54,9 @@ def register_xref_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "resolve_xref",
             call,
-            context=McpErrorContext("resolve_xref", arguments={"xref_id": xref_id}),
+            context=McpErrorContext(
+                "resolve_xref", arguments={"xref_id": xref_id}, response_mode=response_mode
+            ),
         )
 
     @mcp.tool(
@@ -76,7 +78,10 @@ def register_xref_tools(mcp: FastMCP) -> None:
         term: TermStr,
         prefixes: Annotated[
             list[str] | None,
-            Field(description="Restrict to these target prefixes, e.g. ['OMIM','ORPHA']."),
+            Field(
+                description="Restrict to these target prefixes, e.g. ['OMIM','ORPHA'].",
+                examples=[["OMIM", "ORPHA"]],
+            ),
         ] = None,
         response_mode: ResponseMode = "compact",
         fields: FieldsArg = None,
@@ -91,5 +96,7 @@ def register_xref_tools(mcp: FastMCP) -> None:
         return await run_mcp_tool(
             "map_cross_ontology",
             call,
-            context=McpErrorContext("map_cross_ontology", arguments={"term": term}),
+            context=McpErrorContext(
+                "map_cross_ontology", arguments={"term": term}, response_mode=response_mode
+            ),
         )

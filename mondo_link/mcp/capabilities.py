@@ -149,10 +149,18 @@ def build_capabilities() -> dict[str, Any]:
             "capabilities_version",
             "next_commands",
         ],
+        "per_call_meta_semantics": (
+            "_meta verbosity is tiered by response_mode to control the per-call token "
+            "tax: minimal returns only {tool, request_id}; compact (default) adds "
+            "next_commands (workflow guidance) and capabilities_version (the warm-client "
+            "cache key) but omits elapsed_ms; standard/full add elapsed_ms. Every compact "
+            "or richer response carries next_commands; minimal is the explicit opt-out."
+        ),
         "capabilities_version_semantics": (
             "_meta.capabilities_version is a content hash of this discovery contract. "
             "A warm client caches the last value it saw and skips re-fetching "
-            "get_server_capabilities while it is unchanged."
+            "get_server_capabilities while it is unchanged. It is omitted in minimal "
+            "mode (the caller has opted out of all non-essential _meta)."
         ),
         "field_projection": (
             "get_disease and map_cross_ontology accept fields=[...] for a sparse "

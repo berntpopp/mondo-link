@@ -51,6 +51,7 @@ class MondoRepository:
                 f"Cannot open Mondo database at {self._path}: {exc}."
             ) from exc
         self._conn.row_factory = sqlite3.Row
+        self._xref_label_col: bool | None = None
 
     def close(self) -> None:
         """Close the underlying SQLite connection."""
@@ -269,11 +270,27 @@ class MondoRepository:
 
     # -- cross-references ------------------------------------------------------
 
+    def _has_xref_label(self) -> bool:
+        """Whether the xref table carries ``object_label`` (absent on a pre-v2 index).
+
+        Cached so an old volume (built before the column existed) keeps working --
+        the query substitutes ``NULL`` rather than raising ``no such column``.
+        """
+        if self._xref_label_col is None:
+            cols = {row["name"] for row in self._conn.execute("PRAGMA table_info(xref)")}
+            self._xref_label_col = "object_label" in cols
+        return self._xref_label_col
+
     def xrefs_for(self, mondo_id: str, prefixes: list[str] | None = None) -> list[dict[str, Any]]:
-        """Cross-references for ``mondo_id``, optionally filtered by prefix."""
+        """Cross-references for ``mondo_id``, optionally filtered by prefix.
+
+        ``object_label`` is the target term's human-readable name (SSSOM only); it is
+        ``None`` for OBO xrefs and for any index built before the column existed.
+        """
+        label_expr = "x.object_label" if self._has_xref_label() else "NULL"
         sql = (
-            "SELECT x.prefix, x.object_id, x.object_id_upper, x.predicate, x.origin, x.source "
-            "FROM xref x WHERE x.mondo_id = ?"
+            f"SELECT x.prefix, x.object_id, x.object_id_upper, x.predicate, x.origin, "  # noqa: S608
+            f"x.source, {label_expr} AS object_label FROM xref x WHERE x.mondo_id = ?"
         )
         params: list[Any] = [mondo_id]
         if prefixes:
@@ -289,6 +306,7 @@ class MondoRepository:
                 "predicate": r["predicate"],
                 "origin": r["origin"],
                 "source": r["source"],
+                "object_label": r["object_label"],
             }
             for r in rows
         ]

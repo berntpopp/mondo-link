@@ -62,6 +62,16 @@ def test_resolve_by_exact_synonym(service: MondoService) -> None:
     assert res["match_type"] == "exact_synonym"
 
 
+def test_resolve_acronym_is_case_insensitive(service: MondoService) -> None:
+    # A clinical acronym that lives as a Mondo synonym (here "HD"; on the real index
+    # e.g. "ADPKD") must resolve regardless of case so the resolve-first design does
+    # not dead-end on the obvious lowercase form a user might type.
+    for query in ("HD", "hd", "Hd"):
+        res = service.resolve_disease(query)
+        assert res["mondo_id"] == HD, query
+        assert res["match_type"] == "exact_synonym", query
+
+
 def test_resolve_by_xref(service: MondoService) -> None:
     res = service.resolve_disease("OMIM:143100")
     assert res["mondo_id"] == HD  # exactMatch wins over NEURODEGEN's closeMatch
@@ -300,6 +310,32 @@ def test_map_cross_ontology_prefix_filter(service: MondoService) -> None:
     res = service.map_cross_ontology("MONDO:0007739", prefixes=["omim", "doid"])
     assert set(res["mappings"]) == {"OMIM", "DOID"}
     assert res["prefixes_filter"] == ["OMIM", "DOID"]
+
+
+def test_map_cross_ontology_dedups_multi_predicate_target(service: MondoService) -> None:
+    # OMIM:609300 maps to NEURODEGEN via TWO rows (sssom exactMatch + obo_xref
+    # equivalentTo). The grouped output must collapse them into ONE entry that
+    # lists both predicates (strongest first) -- not two rows for the same id
+    # (provenance-rich but token-wasteful).
+    res = service.map_cross_ontology(NEURODEGEN)
+    omim = res["mappings"]["OMIM"]
+    matches = [e for e in omim if e["object_id"] == "OMIM:609300"]
+    assert len(matches) == 1
+    entry = matches[0]
+    assert entry["predicate"] == "exactMatch"  # strongest of the two rows
+    assert entry["predicates"] == ["exactMatch", "equivalentTo"]
+    # count counts distinct targets, and equals the rendered entry count.
+    assert res["count"] == sum(len(rows) for rows in res["mappings"].values())
+
+
+def test_map_cross_ontology_omits_null_source(service: MondoService) -> None:
+    # HD's DOID xref is an OBO xref with no mapping_justification; the entry must
+    # not carry a wasteful ``source: null`` and (single row) no ``predicates`` list.
+    res = service.map_cross_ontology(HD)
+    doid = res["mappings"]["DOID"][0]
+    assert doid["object_id"] == "DOID:12858"
+    assert "source" not in doid
+    assert "predicates" not in doid
 
 
 # -- diagnostics --------------------------------------------------------------

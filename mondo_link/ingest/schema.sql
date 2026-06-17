@@ -53,7 +53,8 @@ CREATE TABLE xref (
     object_id_upper TEXT NOT NULL,
     predicate       TEXT NOT NULL,
     origin          TEXT NOT NULL,
-    source          TEXT
+    source          TEXT,
+    object_label    TEXT
 );
 CREATE INDEX idx_xref_mondo ON xref (mondo_id);
 CREATE INDEX idx_xref_obj ON xref (prefix, object_id_upper);

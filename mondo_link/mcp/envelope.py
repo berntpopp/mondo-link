@@ -29,12 +29,14 @@ from mondo_link.exceptions import (
 )
 from mondo_link.mcp import metrics
 from mondo_link.mcp.next_commands import cmd, default_error_next_commands, withdrawn_recovery
+from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
 logger = logging.getLogger(__name__)
 
 # Per-call _meta is kept lean: static provenance (research-use restriction,
 # citation, Mondo release) lives ONLY in get_server_capabilities. Per-call _meta
-# carries only dynamic fields: tool, request_id, next_commands.
+# carries only dynamic fields: tool, request_id, [next_commands, capabilities_version,
+# elapsed_ms] -- and those three are tiered by response_mode (see _shape_meta).
 _RETRYABLE = {"rate_limited", "upstream_unavailable", "data_unavailable"}
 
 
@@ -45,6 +47,8 @@ class McpErrorContext:
     tool_name: str
     fallback: dict[str, Any] | None = field(default=None)
     arguments: dict[str, Any] = field(default_factory=dict)
+    #: The caller's verbosity, used to tier _meta (see :func:`_shape_meta`).
+    response_mode: str = DEFAULT_RESPONSE_MODE
 
 
 class McpToolError(Exception):
@@ -230,6 +234,28 @@ def _stamp_capabilities_version(meta: dict[str, Any]) -> None:
         meta["capabilities_version"] = version
 
 
+def _shape_meta(meta: dict[str, Any], response_mode: str) -> dict[str, Any]:
+    """Tier ``_meta`` verbosity by ``response_mode`` to control the per-call token tax.
+
+    - ``minimal``: the trace essentials only -- ``{tool, request_id}``. The caller
+      explicitly opted out of guidance, so ``next_commands`` / ``capabilities_version``
+      / ``elapsed_ms`` are dropped.
+    - ``compact`` (default): keep ``next_commands`` (workflow guidance) and
+      ``capabilities_version`` (the warm-client cache key the discovery contract leans
+      on), but drop the ``elapsed_ms`` observability echo from the hot path -- it is
+      still recorded server-side and surfaced by ``get_diagnostics``.
+    - ``standard`` / ``full``: the complete ``_meta``, including ``elapsed_ms``.
+
+    The universal ``next_commands`` invariant therefore holds for ``compact`` and
+    richer (every default response still chains); ``minimal`` is the documented opt-out.
+    """
+    if response_mode == "minimal":
+        return {"tool": meta["tool"], "request_id": meta["request_id"]}
+    if response_mode in ("standard", "full"):
+        return meta
+    return {k: v for k, v in meta.items() if k != "elapsed_ms"}
+
+
 async def run_mcp_tool(
     tool_name: str,
     call: Callable[[], Awaitable[dict[str, Any]]],
@@ -245,13 +271,14 @@ async def run_mcp_tool(
         if isinstance(result, dict):
             existing_meta: dict[str, Any] = result.get("_meta") or {}
             success = bool(result.setdefault("success", True))
-            result["_meta"] = {
+            meta = {
                 **existing_meta,
                 "tool": tool_name,
                 "request_id": _request_id(),
                 "elapsed_ms": elapsed,
             }
-            _stamp_capabilities_version(result["_meta"])
+            _stamp_capabilities_version(meta)
+            result["_meta"] = _shape_meta(meta, ctx.response_mode)
             metrics.record(tool_name, elapsed, ok=success)
         return result
     except Exception as exc:  # broad catch is the error-boundary contract
@@ -259,6 +286,7 @@ async def run_mcp_tool(
         envelope = _error_envelope(exc, ctx)
         envelope["_meta"]["elapsed_ms"] = elapsed
         _stamp_capabilities_version(envelope["_meta"])
+        envelope["_meta"] = _shape_meta(envelope["_meta"], ctx.response_mode)
         metrics.record(tool_name, elapsed, ok=False)
         logger.warning(
             "mcp_tool_error tool=%s code=%s exc=%s",
