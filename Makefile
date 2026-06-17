@@ -66,8 +66,8 @@ ci-local: format-check lint-ci lint-loc typecheck test-fast ## Fast local CI-equ
 
 precommit: ci-local ## Run checks expected before commit
 
-verify-deploy: ## Fail if the deployed build sha != local HEAD (URL=<diagnostics endpoint>)
-	@test -n "$(URL)" || { echo "set URL=<diagnostics endpoint>, e.g. https://<host>/diagnostics"; exit 2; }
+verify-deploy: ## Fail if the deployed build sha != local HEAD (URL=<server>/health)
+	@test -n "$(URL)" || { echo "set URL=<server>/health, e.g. http://127.0.0.1:8000/health"; exit 2; }
 	curl -fsS "$(URL)" | uv run python scripts/check_deployed_freshness.py
 
 clean: ## Remove local caches and reports

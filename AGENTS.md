@@ -62,10 +62,11 @@ test-fast      pytest -n auto, coverage ≥ 80%
 `tests/unit/test_output_schemas.py` runs inside `test-fast` and is the gate
 against the grouped-payload schema leak (every tool's real output — success and
 error, all response modes — must validate against its own `output_schema`). After
-a redeploy, also run `make verify-deploy URL=<server>/diagnostics`: it pipes the
-live `get_diagnostics` into `scripts/check_deployed_freshness.py` and exits
-non-zero unless `build.git_sha` matches local HEAD — the guard against shipping a
-green local tree whose fixes never reached the running container.
+a redeploy, also run `make verify-deploy URL=<server>/health`: it pipes the live
+`/health` (or a `get_diagnostics`) payload into
+`scripts/check_deployed_freshness.py` and exits non-zero unless the build
+`git_sha` matches local HEAD — the guard against shipping a green local tree whose
+fixes never reached the running container.
 
 ## Conventions
 
