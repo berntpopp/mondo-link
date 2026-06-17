@@ -74,6 +74,19 @@ async def test_map_cross_ontology_groups_by_prefix(facade: Any, structured: Any)
     payload = structured(await facade.call_tool("map_cross_ontology", {"term": _SGS}))
     assert payload["success"] is True
     assert "OMIM" in payload["mappings"]
+    assert payload["count"] == sum(len(v) for v in payload["mappings"].values())
+
+
+async def test_get_disease_sparse_fieldset(facade: Any, structured: Any) -> None:
+    payload = structured(
+        await facade.call_tool("get_disease", {"term": _SGS, "fields": ["xrefs.OMIM"]})
+    )
+    assert payload["success"] is True
+    # anchors retained, only the requested xref group kept, definition projected out
+    assert payload["mondo_id"] == _SGS
+    assert set(payload["xrefs"]) == {"OMIM"}
+    assert "definition" not in payload
+    assert "parents" not in payload
 
 
 async def test_obsolete_term_is_withdrawn(facade: Any, structured: Any) -> None:
@@ -91,13 +104,53 @@ async def test_unknown_id_not_found(facade: Any, structured: Any) -> None:
     assert payload["error_code"] == "not_found"
 
 
+async def test_label_miss_embeds_top_hit_in_next_commands(facade: Any, structured: Any) -> None:
+    # "Shprintzen" is a partial label (no exact lookup) but FTS finds SGS: the
+    # not_found envelope must carry candidates AND chain to get_disease(top hit).
+    payload = structured(await facade.call_tool("get_disease", {"term": "Shprintzen"}))
+    assert payload["success"] is False
+    assert payload["error_code"] == "not_found"
+    assert payload["candidates"][0]["mondo_id"] == _SGS
+    first = payload["_meta"]["next_commands"][0]
+    assert first["tool"] == "get_disease"
+    assert first["arguments"]["term"] == _SGS
+
+
 async def test_capabilities_lists_all_tools(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("get_server_capabilities", {}))
     assert payload["tool_count"] == len(TOOLS)
     assert "2026-06-01" in (payload["mondo_version"] or "")
 
 
+async def test_every_meta_echoes_capabilities_version(facade: Any, structured: Any) -> None:
+    from mondo_link.mcp.capabilities import capabilities_version
+
+    version = capabilities_version()
+    assert version
+    for tool, args in (
+        ("resolve_disease", {"query": "Shprintzen-Goldberg syndrome"}),
+        ("get_disease", {"term": _SGS}),
+        ("get_disease", {"term": "MONDO:0000000"}),  # error envelope echoes it too
+    ):
+        payload = structured(await facade.call_tool(tool, args))
+        assert payload["_meta"]["capabilities_version"] == version
+
+
 async def test_diagnostics_reports_built_index(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("get_diagnostics", {}))
     assert payload["index_built"] is True
     assert "build" in payload
+
+
+async def test_diagnostics_reports_runtime_metrics(facade: Any, structured: Any) -> None:
+    from mondo_link.mcp import metrics
+
+    metrics.reset()
+    await facade.call_tool("resolve_disease", {"query": "Shprintzen-Goldberg syndrome"})
+    await facade.call_tool("get_disease", {"term": "MONDO:0000000"})  # one error
+    payload = structured(await facade.call_tool("get_diagnostics", {}))
+    runtime = payload["runtime"]
+    assert runtime["requests"] >= 2
+    assert runtime["errors"] >= 1
+    assert "p95" in runtime["latency_ms"]
+    assert "resolve_disease" in runtime["per_tool"]

@@ -37,3 +37,13 @@ XrefIdStr = Annotated[
         examples=["OMIM:182212", "Orphanet:2462", "DOID:0050776"],
     ),
 ]
+
+FieldsArg = Annotated[
+    list[str] | None,
+    Field(
+        description="Sparse fieldset: return ONLY these top-level keys (dot into a grouped "
+        "object, e.g. 'xrefs.OMIM'). Identity anchors (mondo_id, name, mondo_version) are "
+        "always included. Omit for the full payload.",
+        examples=[["xrefs.OMIM"], ["definition", "parents"]],
+    ),
+]

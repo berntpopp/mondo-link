@@ -31,7 +31,15 @@ and cross-ontology mapping. It mirrors the sibling `mgi-link` stack/architecture
 - Every tool declares `output_schema` + `READ_ONLY_OPEN_WORLD` annotations, and
   its first description sentence is a discovery summary ending with
   `Signature: tool(args...)`.
-- `response_mode` ∈ `minimal | compact | standard | full`.
+- **Every tool's real output (success + error, all response modes) must validate
+  against its own `output_schema`** — enforced by `tests/unit/test_output_schemas.py`.
+  Grouped-by-prefix payloads (`xrefs`, `mappings`) are objects keyed by prefix, not
+  arrays; declare them as objects or the envelope leaks a raw validation error.
+- `response_mode` ∈ `minimal | compact | standard | full`. List tools also carry a
+  pagination block (`total`/`returned`/`limit`/`offset`/`truncated`/`next_offset`);
+  when truncated, `_meta.next_commands` offers a forward-page step (advance `offset`).
+- Every `_meta` echoes `capabilities_version` (a hash of the discovery contract) so
+  warm clients can skip re-fetching `get_server_capabilities`.
 - Keep `mcp/capabilities.py::TOOLS` in sync with the registered tool set
   (`tests/unit/test_tool_names.py` enforces this).
 - Identifiers are normalised in `identifiers.py` (`MONDO:NNNNNNN`; external
@@ -72,7 +80,7 @@ mondo_link/
   ingest/  downloader, lock, parser, builder, schema.sql, cli
   data/    repository           # read-only SQLite
   services/ mondo_service, shaping, pagination, refresh
-  mcp/     envelope, capabilities, annotations, schemas, next_commands,
+  mcp/     envelope, capabilities, annotations, schemas, next_commands, metrics,
            middleware, facade, arg_help, resources, service_adapters, tools/
 server.py  mcp_server.py  scripts/check_file_size.py
 ```

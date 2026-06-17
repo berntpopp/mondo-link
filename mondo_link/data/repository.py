@@ -119,7 +119,7 @@ class MondoRepository:
         return [{"mondo_id": r["mondo_id"], "label_type": r["label_type"]} for r in rows]
 
     def search(
-        self, query: str, *, limit: int, include_obsolete: bool
+        self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
     ) -> tuple[list[dict[str, Any]], int]:
         """Full-text search over name/synonyms/definition; returns ``(rows, total)``."""
         match = self._fts_query(query)
@@ -129,17 +129,19 @@ class MondoRepository:
         sql = (
             "SELECT f.mondo_id, t.name, t.definition, bm25(term_fts) AS score "  # noqa: S608
             "FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "
-            f"WHERE {where} ORDER BY score LIMIT ?"
+            f"WHERE {where} ORDER BY score LIMIT ? OFFSET ?"
         )
         count_sql = (
             "SELECT COUNT(*) AS n FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "  # noqa: S608
             f"WHERE {where}"
         )
         try:
-            rows = self._conn.execute(sql, (match, limit)).fetchall()
+            rows = self._conn.execute(sql, (match, limit, offset)).fetchall()
             total = int(self._conn.execute(count_sql, (match,)).fetchone()["n"])
         except sqlite3.Error:
-            return self._search_like(query, limit=limit, include_obsolete=include_obsolete)
+            return self._search_like(
+                query, limit=limit, include_obsolete=include_obsolete, offset=offset
+            )
         hits = [
             {
                 "mondo_id": r["mondo_id"],
@@ -152,7 +154,7 @@ class MondoRepository:
         return hits, total
 
     def _search_like(
-        self, query: str, *, limit: int, include_obsolete: bool
+        self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
     ) -> tuple[list[dict[str, Any]], int]:
         """``LIKE`` fallback for pathological FTS input."""
         pattern = "%" + query.upper().replace("%", "").replace("_", "") + "%"
@@ -160,8 +162,9 @@ class MondoRepository:
         if not include_obsolete:
             where += " AND is_obsolete = 0"
         rows = self._conn.execute(
-            f"SELECT mondo_id, name, definition FROM term WHERE {where} ORDER BY name LIMIT ?",  # noqa: S608
-            (pattern, limit),
+            f"SELECT mondo_id, name, definition FROM term WHERE {where} "  # noqa: S608
+            "ORDER BY name LIMIT ? OFFSET ?",
+            (pattern, limit, offset),
         ).fetchall()
         total = int(
             self._conn.execute(
@@ -200,21 +203,21 @@ class MondoRepository:
         ).fetchall()
         return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
-    def ancestors(self, mondo_id: str, *, limit: int) -> list[dict[str, Any]]:
+    def ancestors(self, mondo_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         """Transitive ancestors of ``mondo_id`` (via the closure table)."""
         rows = self._conn.execute(
             "SELECT t.mondo_id, t.name FROM mondo_closure c JOIN term t ON t.mondo_id = c.ancestor_id "
-            "WHERE c.mondo_id = ? AND c.ancestor_id != ? ORDER BY t.name LIMIT ?",
-            (mondo_id, mondo_id, limit),
+            "WHERE c.mondo_id = ? AND c.ancestor_id != ? ORDER BY t.name LIMIT ? OFFSET ?",
+            (mondo_id, mondo_id, limit, offset),
         ).fetchall()
         return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
-    def descendants(self, mondo_id: str, *, limit: int) -> list[dict[str, Any]]:
+    def descendants(self, mondo_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         """Transitive descendants of ``mondo_id`` (via the closure table)."""
         rows = self._conn.execute(
             "SELECT t.mondo_id, t.name FROM mondo_closure c JOIN term t ON t.mondo_id = c.mondo_id "
-            "WHERE c.ancestor_id = ? AND c.mondo_id != ? ORDER BY t.name LIMIT ?",
-            (mondo_id, mondo_id, limit),
+            "WHERE c.ancestor_id = ? AND c.mondo_id != ? ORDER BY t.name LIMIT ? OFFSET ?",
+            (mondo_id, mondo_id, limit, offset),
         ).fetchall()
         return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
@@ -272,13 +275,13 @@ class MondoRepository:
             for r in rows
         ]
 
-    def mondo_for_xref(self, xref_id: str, *, limit: int) -> list[dict[str, Any]]:
+    def mondo_for_xref(self, xref_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         """MONDO terms that carry a mapping to the external ``xref_id`` CURIE."""
         rows = self._conn.execute(
             "SELECT DISTINCT x.mondo_id, t.name, x.prefix, x.object_id, x.predicate, x.origin "  # noqa: S608
             "FROM xref x JOIN term t ON t.mondo_id = x.mondo_id "
-            f"WHERE x.object_id_upper = ? ORDER BY {_PREDICATE_CASE}, t.name LIMIT ?",
-            (xref_id.upper(), limit),
+            f"WHERE x.object_id_upper = ? ORDER BY {_PREDICATE_CASE}, t.name LIMIT ? OFFSET ?",
+            (xref_id.upper(), limit, offset),
         ).fetchall()
         return [
             {
@@ -291,6 +294,16 @@ class MondoRepository:
             }
             for r in rows
         ]
+
+    def count_mondo_for_xref(self, xref_id: str) -> int:
+        """Total distinct MONDO terms mapping to ``xref_id`` (for pagination totals)."""
+        return int(
+            self._conn.execute(
+                "SELECT COUNT(*) AS n FROM "
+                "(SELECT DISTINCT x.mondo_id FROM xref x WHERE x.object_id_upper = ?)",
+                (xref_id.upper(),),
+            ).fetchone()["n"]
+        )
 
     def counts(self) -> dict[str, int]:
         """Return row counts for the principal tables (for diagnostics)."""

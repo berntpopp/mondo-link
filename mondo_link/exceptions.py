@@ -11,6 +11,8 @@ the only source.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class MondoError(Exception):
     """Base exception for all mondo-link data/client errors."""
@@ -52,11 +54,22 @@ class InvalidInputError(MondoError):
 
 
 class NotFoundError(MondoError):
-    """A lookup returned no rows for an otherwise valid identifier."""
+    """A lookup returned no rows for an otherwise valid identifier.
 
-    def __init__(self, message: str = "No matching Mondo record found.") -> None:
-        """Initialise with a 404 status code."""
+    For a free-text label miss the service may attach ``suggestions`` (the closest
+    search hits) so the envelope can chain straight to the answer (``get_disease``
+    on the top hit) instead of merely routing the client back to the search tool.
+    """
+
+    def __init__(
+        self,
+        message: str = "No matching Mondo record found.",
+        *,
+        suggestions: list[dict[str, Any]] | None = None,
+    ) -> None:
+        """Initialise with a 404 status code and optional close-match suggestions."""
         super().__init__(message, status_code=404)
+        self.suggestions = suggestions or []
 
 
 class WithdrawnEntryError(NotFoundError):
