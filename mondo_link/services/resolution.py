@@ -85,15 +85,17 @@ class Resolver:
             raise InvalidInputError(
                 "term must be a non-empty MONDO id, label, or xref.", field="term"
             )
-        return self.classify_resolution(raw)[1]
+        return self.classify_resolution(raw, fuzzy=False)[1]
 
-    def classify_resolution(self, raw: str) -> tuple[str, str]:
+    def classify_resolution(self, raw: str, *, fuzzy: bool = True) -> tuple[str, str]:
         """Resolve ``raw`` and report how the match was made (``match_type``).
 
         Cascade: MONDO id (obsolete -> ``WithdrawnEntryError``) -> external xref
         CURIE -> exact label/synonym. A multi-term exact label raises
-        ``AmbiguousQueryError``; an exact miss raises ``NotFoundError``. Assumes
-        ``raw`` is already stripped and non-empty (the public entry points validate).
+        ``AmbiguousQueryError``. On an exact-label miss: when ``fuzzy`` is set (the
+        ``resolve_disease`` entry) a conservative FTS fallback runs; otherwise (the
+        strict ``resolve_term_id`` entry) ``NotFoundError`` is raised. Assumes ``raw``
+        is already stripped and non-empty (the public entry points validate).
         """
         mondo_id = normalize_mondo_id(raw)
         if mondo_id:
@@ -114,6 +116,8 @@ class Resolver:
                 raise NotFoundError(f"No Mondo term cross-references {normalized}.")
         candidates = self._repo.resolve_label(raw.upper())
         if not candidates:
+            if fuzzy:
+                return self._fuzzy_or_not_found(raw)
             raise self._label_not_found(raw)
         distinct = {c["mondo_id"] for c in candidates}
         if len(distinct) == 1:
@@ -123,6 +127,33 @@ class Resolver:
             f"'{raw}' matches {len(distinct)} Mondo terms; pick one and call get_disease.",
             candidates=self._label_candidates(candidates),
         )
+
+    def _fuzzy_or_not_found(self, raw: str) -> tuple[str, str]:
+        """Exact-label miss: try a conservative FTS-based fuzzy resolution.
+
+        A clear single winner resolves with ``match_type='fuzzy'``; a near-tie
+        raises ``AmbiguousQueryError`` with candidates; nothing above the score
+        floor raises ``NotFoundError`` (embedding the weak hits as suggestions, so
+        the envelope can still chain straight to ``get_disease``).
+        """
+        hits, _ = self._repo.search(raw, limit=FUZZY_MAX_CANDIDATES, include_obsolete=False)
+        kind, payload = decide_fuzzy(hits)
+        if kind == "resolve" and isinstance(payload, dict):
+            return "fuzzy", str(payload["mondo_id"])
+        if kind == "ambiguous" and isinstance(payload, list):
+            cands = [
+                {"mondo_id": h["mondo_id"], "name": h["name"], "label_type": "fuzzy"}
+                for h in payload
+            ]
+            raise AmbiguousQueryError(
+                f"'{raw}' has no exact match; the closest Mondo terms are in candidates.",
+                candidates=cands,
+            )
+        suggestions = [
+            {"mondo_id": h["mondo_id"], "name": h["name"], "score": h.get("score")}
+            for h in hits[:3]
+        ]
+        raise self._label_not_found(raw, suggestions=suggestions)
 
     def _label_not_found(
         self, raw: str, *, suggestions: list[dict[str, Any]] | None = None
