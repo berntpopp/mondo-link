@@ -1,7 +1,7 @@
 .PHONY: help install lock upgrade sync \
         format format-check lint lint-ci lint-fix lint-loc \
         typecheck test test-fast test-unit test-integration test-cov \
-        check ci-local precommit clean \
+        check ci-local precommit clean verify-deploy \
         data data-refresh data-status dev mcp-serve \
         docker-build docker-up docker-down docker-logs docker-url info
 
@@ -65,6 +65,10 @@ check: format lint ## Format and lint
 ci-local: format-check lint-ci lint-loc typecheck test-fast ## Fast local CI-equivalent checks
 
 precommit: ci-local ## Run checks expected before commit
+
+verify-deploy: ## Fail if the deployed build sha != local HEAD (URL=<diagnostics endpoint>)
+	@test -n "$(URL)" || { echo "set URL=<diagnostics endpoint>, e.g. https://<host>/diagnostics"; exit 2; }
+	curl -fsS "$(URL)" | uv run python scripts/check_deployed_freshness.py
 
 clean: ## Remove local caches and reports
 	rm -rf .pytest_cache .ruff_cache .mypy_cache htmlcov .coverage coverage.xml dist build
