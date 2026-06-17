@@ -34,6 +34,38 @@ _LABEL_MATCH_TYPE = {
     "narrow_synonym": "related_synonym",
 }
 
+#: Fuzzy thresholds (tuned against bm25-derived scores; repo.search returns
+#: ``score = round(-bm25, 4)`` where higher = more relevant). A near-miss resolves
+#: only when the top hit clears an absolute floor AND dominates the runner-up by a
+#: factor -- conservative by design so a tie is never silently collapsed.
+FUZZY_MIN_SCORE = 0.5
+FUZZY_DOMINANCE = 1.5
+FUZZY_MAX_CANDIDATES = 5
+
+
+def decide_fuzzy(
+    hits: list[dict[str, Any]],
+) -> tuple[str, dict[str, Any] | list[dict[str, Any]] | None]:
+    """Classify FTS hits into a fuzzy decision.
+
+    Returns ``("resolve", top_hit)`` for a clear winner, ``("ambiguous", candidates)``
+    when the runner-up is within ``FUZZY_DOMINANCE`` of the top, or ``("none", None)``
+    when nothing clears ``FUZZY_MIN_SCORE``. Conservative by design: never returns a
+    winner on a near-tie, so a wrong term is never silently substituted.
+    """
+    if not hits:
+        return ("none", None)
+    top = hits[0]
+    top_score = float(top.get("score") or 0.0)
+    if top_score < FUZZY_MIN_SCORE:
+        return ("none", None)
+    if len(hits) == 1:
+        return ("resolve", top)
+    second = float(hits[1].get("score") or 0.0)
+    if second <= 0.0 or top_score >= FUZZY_DOMINANCE * second:
+        return ("resolve", top)
+    return ("ambiguous", hits[:FUZZY_MAX_CANDIDATES])
+
 
 class Resolver:
     """Resolve any id/label/xref to a canonical MONDO id with provenance."""
