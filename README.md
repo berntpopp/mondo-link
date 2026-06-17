@@ -33,6 +33,10 @@ Every response carries `_meta.next_commands` (ready-to-call follow-ups). Ids are
 normalised to `MONDO:NNNNNNN`. `response_mode` ∈ `minimal | compact | standard |
 full` (default `compact`).
 
+Tools are **unprefixed** here (`serverInfo.name` = `mondo-link`); the GeneFoundry
+router applies the canonical gateway **namespace token** `mondo` at mount time, so
+`resolve_disease` surfaces as `mondo_resolve_disease` behind the federated endpoint.
+
 ## Quickstart
 
 ```bash
