@@ -12,7 +12,7 @@ from typing import Any
 
 import pytest
 
-from mondo_link.exceptions import NotFoundError
+from mondo_link.exceptions import AmbiguousQueryError, NotFoundError
 from mondo_link.services.resolution import (
     FUZZY_DOMINANCE,
     FUZZY_MAX_CANDIDATES,
@@ -101,3 +101,13 @@ def test_get_disease_stays_strict_on_near_miss(service: Any) -> None:
     with pytest.raises(NotFoundError) as exc:
         service.get_disease("Shprintzen Goldberg")
     assert any(s["mondo_id"] == _SGS for s in exc.value.suggestions)
+
+
+def test_exact_ambiguous_label_beats_fuzzy(service: Any) -> None:
+    # "shared ambiguous disorder" is an EXACT synonym of two distinct fixture terms:
+    # the exact-ambiguous path wins BEFORE fuzzy runs (F1 must defer to it).
+    with pytest.raises(AmbiguousQueryError) as exc:
+        service.resolve_disease("shared ambiguous disorder")
+    candidates = exc.value.candidates
+    assert len({c["mondo_id"] for c in candidates}) >= 2
+    assert all(c.get("name") for c in candidates)
