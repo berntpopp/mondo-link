@@ -17,6 +17,7 @@ from mondo_link.services.resolution import (
     FUZZY_DOMINANCE,
     FUZZY_MAX_CANDIDATES,
     FUZZY_MIN_SCORE,
+    Resolver,
     decide_fuzzy,
 )
 
@@ -95,6 +96,13 @@ def test_gibberish_still_not_found(service: Any) -> None:
         service.resolve_disease("zzzzznotadiseasezzzzz")
 
 
+def test_unmatched_xref_curie_not_found(service: Any) -> None:
+    # A well-formed external CURIE that no Mondo term references -> not_found
+    # (the xref branch never falls through to a fuzzy label search).
+    with pytest.raises(NotFoundError):
+        service.resolve_disease("OMIM:000000")
+
+
 def test_get_disease_stays_strict_on_near_miss(service: Any) -> None:
     # get_disease is the STRICT (non-fuzzy) entry: a near-miss returns not_found
     # with the closest hit embedded as a suggestion, rather than silently guessing.
@@ -111,3 +119,51 @@ def test_exact_ambiguous_label_beats_fuzzy(service: Any) -> None:
     candidates = exc.value.candidates
     assert len({c["mondo_id"] for c in candidates}) >= 2
     assert all(c.get("name") for c in candidates)
+
+
+# -- fuzzy fallback branches (Resolver over a scripted fake repo) --------------
+
+
+class _FakeRepo:
+    """Repo stub: no exact label match, scripted FTS hits -> drives the fuzzy paths."""
+
+    def __init__(self, hits: list[dict[str, Any]]) -> None:
+        self._hits = hits
+
+    def resolve_label(self, label: str) -> list[dict[str, Any]]:
+        return []
+
+    def search(
+        self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
+    ) -> tuple[list[dict[str, Any]], int]:
+        return self._hits[:limit], len(self._hits)
+
+
+def test_fuzzy_near_tie_raises_ambiguous_with_fuzzy_candidates() -> None:
+    resolver = Resolver(_FakeRepo([_hit("MONDO:1", "a", 3.0), _hit("MONDO:2", "b", 2.9)]))
+    with pytest.raises(AmbiguousQueryError) as exc:
+        resolver.classify_resolution("near tie")
+    assert {c["mondo_id"] for c in exc.value.candidates} == {"MONDO:1", "MONDO:2"}
+    assert all(c["label_type"] == "fuzzy" for c in exc.value.candidates)
+
+
+def test_fuzzy_below_floor_not_found_embeds_weak_hits() -> None:
+    weak = [_hit("MONDO:9", "weak", FUZZY_MIN_SCORE - 0.1)]
+    resolver = Resolver(_FakeRepo(weak))
+    with pytest.raises(NotFoundError) as exc:
+        resolver.classify_resolution("weak query")
+    assert exc.value.suggestions[0]["mondo_id"] == "MONDO:9"
+
+
+def test_fuzzy_no_hits_not_found_without_suggestions() -> None:
+    resolver = Resolver(_FakeRepo([]))
+    with pytest.raises(NotFoundError) as exc:
+        resolver.classify_resolution("nothing here")
+    assert exc.value.suggestions == []
+
+
+def test_strict_resolve_term_id_never_fuzzy() -> None:
+    # resolve_term_id (get_disease's entry) must NOT fuzzy-resolve a strong hit.
+    resolver = Resolver(_FakeRepo([_hit("MONDO:1", "a", FUZZY_MIN_SCORE + 5.0)]))
+    with pytest.raises(NotFoundError):
+        resolver.resolve_term_id("some label")
