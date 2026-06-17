@@ -103,6 +103,15 @@ def test_unmatched_xref_curie_not_found(service: Any) -> None:
         service.resolve_disease("OMIM:000000")
 
 
+def test_relaxed_suggestions_avoid_dead_end(service: Any) -> None:
+    # A multi-token query whose strict AND-search matches nothing ("Marfan zzzqq")
+    # must still surface ranked candidates via single-token relaxation, so a query
+    # like "ADPKD 1" never dead-ends on a bare 404 with empty candidates.
+    with pytest.raises(NotFoundError) as exc:
+        service.resolve_disease("Marfan zzzqq")
+    assert exc.value.suggestions, "relaxation should surface Marfan-family candidates"
+
+
 def test_get_disease_stays_strict_on_near_miss(service: Any) -> None:
     # get_disease is the STRICT (non-fuzzy) entry: a near-miss returns not_found
     # with the closest hit embedded as a suggestion, rather than silently guessing.

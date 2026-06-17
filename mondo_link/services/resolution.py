@@ -12,6 +12,7 @@ Returns plain data / raises typed exceptions; the MCP envelope owns error shapin
 
 from __future__ import annotations
 
+import re
 from typing import TYPE_CHECKING, Any
 
 from mondo_link.exceptions import (
@@ -41,6 +42,10 @@ _LABEL_MATCH_TYPE = {
 FUZZY_MIN_SCORE = 0.5
 FUZZY_DOMINANCE = 1.5
 FUZZY_MAX_CANDIDATES = 5
+
+#: Distinctive (>=3-char alphabetic) tokens used to relax a multi-token miss into
+#: candidate suggestions (so a query like "ADPKD 1" never dead-ends on a bare 404).
+_TOKEN_RE = re.compile(r"[A-Za-z]{3,}")
 
 
 def decide_fuzzy(
@@ -149,11 +154,9 @@ class Resolver:
                 f"'{raw}' has no exact match; the closest Mondo terms are in candidates.",
                 candidates=cands,
             )
-        suggestions = [
-            {"mondo_id": h["mondo_id"], "name": h["name"], "score": h.get("score")}
-            for h in hits[:3]
-        ]
-        raise self._label_not_found(raw, suggestions=suggestions)
+        if hits:  # weak (below-floor) hits already in hand -> reuse as suggestions
+            raise self._label_not_found(raw, suggestions=_hits_to_suggestions(hits))
+        raise self._label_not_found(raw)  # nothing strict -> _search_suggestions relaxes
 
     def _label_not_found(
         self, raw: str, *, suggestions: list[dict[str, Any]] | None = None
@@ -178,14 +181,29 @@ class Resolver:
         return NotFoundError(message, suggestions=suggestions)
 
     def _search_suggestions(self, raw: str, *, limit: int = 3) -> list[dict[str, Any]]:
-        """Top FTS hits for a failed label lookup (id + name + score), best-effort."""
+        """Close-match suggestions for a failed lookup (id + name + score), best-effort.
+
+        Tries the strict FTS query first; if it finds nothing (a multi-token query
+        where the AND/prefix match fails, e.g. "ADPKD 1"), it relaxes to the most
+        distinctive single token so the not_found still carries ranked candidates
+        rather than dead-ending. Relaxed hits inform *suggestions only* -- they are
+        never auto-resolved.
+        """
+        hits = self._safe_search(raw, limit)
+        if not hits:
+            for token in sorted(set(_TOKEN_RE.findall(raw)), key=len, reverse=True):
+                hits = self._safe_search(token, limit)
+                if hits:
+                    break
+        return _hits_to_suggestions(hits)
+
+    def _safe_search(self, query: str, limit: int) -> list[dict[str, Any]]:
+        """Run an FTS search, returning [] on any failure (never mask the not_found)."""
         try:
-            hits, _ = self._repo.search(raw, limit=limit, include_obsolete=False)
-        except Exception:  # pragma: no cover - defensive: never mask the not_found
+            hits, _ = self._repo.search(query, limit=limit, include_obsolete=False)
+        except Exception:  # pragma: no cover - defensive
             return []
-        return [
-            {"mondo_id": h["mondo_id"], "name": h["name"], "score": h.get("score")} for h in hits
-        ]
+        return hits
 
     def _replacement_records(self, record: dict[str, Any]) -> list[dict[str, str]]:
         """Build replacement records (replaced_by + consider) for an obsolete term."""
@@ -223,3 +241,10 @@ class Resolver:
                 }
             )
         return out
+
+
+def _hits_to_suggestions(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Project FTS hits to compact ``{mondo_id, name, score}`` suggestion rows."""
+    return [
+        {"mondo_id": h["mondo_id"], "name": h["name"], "score": h.get("score")} for h in hits[:3]
+    ]
