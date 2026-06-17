@@ -80,6 +80,17 @@ def withdrawn_recovery(replaced_by: list[dict[str, str]]) -> list[dict[str, Any]
     return [cmd("get_disease", term=t) for t in targets[:2]]
 
 
+def after_capabilities() -> list[dict[str, Any]]:
+    """After get_server_capabilities (the discovery root): start the canonical
+    resolve->record workflow, then offer the freshness/diagnostics check.
+
+    The discovery root is not exempt from the universal ``next_commands`` invariant
+    (its own ``per_call_meta`` lists ``next_commands`` as guaranteed), so it points
+    at the first real step rather than leaving the chain empty.
+    """
+    return [cmd("resolve_disease", query="Marfan syndrome"), cmd("get_diagnostics")]
+
+
 def after_resolve_disease(resolution: dict[str, Any]) -> list[dict[str, Any]]:
     """After resolve_disease: open the canonical record, else fall back to search."""
     mondo_id = resolution.get("mondo_id")

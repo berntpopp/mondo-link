@@ -43,6 +43,11 @@ FUZZY_MIN_SCORE = 0.5
 FUZZY_DOMINANCE = 1.5
 FUZZY_MAX_CANDIDATES = 5
 
+#: Fuzzy hits are fetched in a larger pool than the candidate cap so the human-disease
+#: prior can sink non-human-animal terms out of the candidate window entirely, rather
+#: than merely below a thin human head.
+FUZZY_SEARCH_POOL = FUZZY_MAX_CANDIDATES * 3
+
 #: Distinctive (>=3-char alphabetic) tokens used to relax a multi-token miss into
 #: candidate suggestions (so a query like "ADPKD 1" never dead-ends on a bare 404).
 _TOKEN_RE = re.compile(r"[A-Za-z]{3,}")
@@ -70,6 +75,25 @@ def decide_fuzzy(
     if second <= 0.0 or top_score >= FUZZY_DOMINANCE * second:
         return ("resolve", top)
     return ("ambiguous", hits[:FUZZY_MAX_CANDIDATES])
+
+
+def rerank_human_first(hits: list[dict[str, Any]], non_human_ids: set[str]) -> list[dict[str, Any]]:
+    """Apply a human-disease prior: sink non-human-animal terms below human terms.
+
+    A query like "Marfan syndrom" must not be led by veterinary terms ("..., pig") that
+    score higher in raw FTS. The sort is two-level and STABLE (bm25 order preserved
+    within each bucket): relevance first -- a hit clearing ``FUZZY_MIN_SCORE`` outranks
+    one below it, so the prior never resurrects an irrelevant hit above a relevant one
+    -- then human before non-human. A no-op when nothing in ``hits`` is non-human.
+    """
+    if not non_human_ids:
+        return hits
+
+    def _key(hit: dict[str, Any]) -> tuple[bool, bool]:
+        below_floor = float(hit.get("score") or 0.0) < FUZZY_MIN_SCORE
+        return (below_floor, hit["mondo_id"] in non_human_ids)
+
+    return sorted(hits, key=_key)
 
 
 class Resolver:
@@ -141,7 +165,8 @@ class Resolver:
         floor raises ``NotFoundError`` (embedding the weak hits as suggestions, so
         the envelope can still chain straight to ``get_disease``).
         """
-        hits, _ = self._repo.search(raw, limit=FUZZY_MAX_CANDIDATES, include_obsolete=False)
+        hits, _ = self._repo.search(raw, limit=FUZZY_SEARCH_POOL, include_obsolete=False)
+        hits = self._demote_non_human(hits)
         kind, payload = decide_fuzzy(hits)
         if kind == "resolve" and isinstance(payload, dict):
             return "fuzzy", str(payload["mondo_id"])
@@ -157,6 +182,13 @@ class Resolver:
         if hits:  # weak (below-floor) hits already in hand -> reuse as suggestions
             raise self._label_not_found(raw, suggestions=_hits_to_suggestions(hits))
         raise self._label_not_found(raw)  # nothing strict -> _search_suggestions relaxes
+
+    def _demote_non_human(self, hits: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Apply the human-disease prior to fuzzy hits (no-op when ``<2`` or all human)."""
+        if len(hits) < 2:
+            return hits
+        non_human = self._repo.non_human_animal_ids([h["mondo_id"] for h in hits])
+        return rerank_human_first(hits, non_human)
 
     def _label_not_found(
         self, raw: str, *, suggestions: list[dict[str, Any]] | None = None
