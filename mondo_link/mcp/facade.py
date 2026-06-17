@@ -8,6 +8,7 @@ from mondo_link.mcp.capabilities import register_capability_resources
 from mondo_link.mcp.middleware import ArgValidationMiddleware
 from mondo_link.mcp.resources import MONDO_SERVER_INSTRUCTIONS
 from mondo_link.mcp.tools import (
+    register_batch_tools,
     register_discovery_tools,
     register_disease_tools,
     register_hierarchy_tools,
@@ -27,6 +28,7 @@ def create_mondo_mcp() -> FastMCP:
     register_disease_tools(mcp)
     register_hierarchy_tools(mcp)
     register_xref_tools(mcp)
+    register_batch_tools(mcp)
     register_capability_resources(mcp)
     mcp.add_middleware(ArgValidationMiddleware())
 

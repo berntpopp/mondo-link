@@ -27,6 +27,7 @@ from mondo_link.mcp.envelope import (
     McpErrorContext,
     McpToolError,
     build_arg_error_envelope,
+    classify_exception,
     run_mcp_tool,
 )
 
@@ -130,6 +131,16 @@ async def test_mcp_tool_error_custom_code() -> None:
     result = await _run(McpToolError(error_code="data_unavailable", message="cold"))
     assert result["error_code"] == "data_unavailable"
     assert result["message"] == "cold"
+
+
+def test_classify_exception_maps_typed_errors() -> None:
+    # Public per-item classifier used by the batch tools (error_code, safe message).
+    assert classify_exception(NotFoundError("x"))[0] == "not_found"
+    assert classify_exception(AmbiguousQueryError("y"))[0] == "ambiguous_query"
+    assert classify_exception(InvalidInputError("z", "field"))[0] == "invalid_input"
+    code, message = classify_exception(ValueError("boom"))
+    assert code == "internal_error"
+    assert "boom" not in message  # client-safe: internal detail is not leaked
 
 
 # --- build_arg_error_envelope ----------------------------------------------

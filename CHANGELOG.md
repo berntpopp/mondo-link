@@ -6,6 +6,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Acronym / fuzzy resolution:** `resolve_disease` now falls back to a
+  conservative FTS match (`match_type: "fuzzy"`) for a near-miss or acronym-like
+  label with no exact id/xref/label match. It resolves only a clear single winner
+  (absolute score floor + dominance over the runner-up); a near-tie returns
+  `ambiguous_query` with candidates, and anything weaker returns `not_found` with
+  suggestions. `get_disease` stays strict (non-fuzzy) so record retrieval never
+  silently guesses.
+- **Batch tools:** `resolve_disease_batch(queries=[...])` and
+  `get_disease_batch(terms=[...], fields=)` resolve/fetch up to 50 items in one
+  round trip with **partial success** — each item returns its record or its own
+  `ok=false`/`error_code`/`message`, and the call never fails wholesale (an
+  over-cap call returns a single `invalid_input`).
+- **Deploy-freshness guard:** `scripts/check_deployed_freshness.py` plus
+  `make verify-deploy URL=<server>/diagnostics` fail a deploy whose live
+  `build.git_sha` does not match local HEAD — the recurrence guard against
+  shipping a green local tree whose fixes never reached the container.
+- Regression coverage for the `ambiguous_query` path (a label shared by two
+  distinct Mondo terms), end-to-end through the facade envelope.
+
 ### Fixed
 
 - **Output-schema leak (P0):** `get_disease.xrefs` and `map_cross_ontology.mappings`

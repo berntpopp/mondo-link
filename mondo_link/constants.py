@@ -21,8 +21,9 @@ PREDICATE_RANK = {
     "xref": 5,
 }
 
-#: How a resolve match was made, strongest first.
-MATCH_TYPES = ("mondo_id", "primary", "exact_synonym", "related_synonym", "xref")
+#: How a resolve match was made, strongest first. ``fuzzy`` is a conservative
+#: FTS fallback used only when no exact id/xref/label match exists.
+MATCH_TYPES = ("mondo_id", "primary", "exact_synonym", "related_synonym", "fuzzy", "xref")
 
 #: Canonical citation pasted verbatim into capability/_meta payloads.
 RECOMMENDED_CITATION = (

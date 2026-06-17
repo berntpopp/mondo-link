@@ -11,14 +11,10 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-from mondo_link.exceptions import (
-    AmbiguousQueryError,
-    InvalidInputError,
-    NotFoundError,
-    WithdrawnEntryError,
-)
-from mondo_link.identifiers import infer_xref_source, normalize_mondo_id, normalize_xref
+from mondo_link.exceptions import InvalidInputError, NotFoundError
+from mondo_link.identifiers import normalize_xref
 from mondo_link.services.pagination import page_fields
+from mondo_link.services.resolution import Resolver
 from mondo_link.services.shaping import (
     DEFAULT_RESPONSE_MODE,
     select_fields,
@@ -29,14 +25,6 @@ from mondo_link.services.shaping import (
 if TYPE_CHECKING:
     from mondo_link.data.repository import MondoRepository
 
-#: Maps a lookup ``label_type`` to a resolve ``match_type``.
-_LABEL_MATCH_TYPE = {
-    "primary": "primary",
-    "exact_synonym": "exact_synonym",
-    "related_synonym": "related_synonym",
-    "broad_synonym": "related_synonym",
-    "narrow_synonym": "related_synonym",
-}
 _MAX_LIMIT = 1000
 
 
@@ -52,123 +40,17 @@ class MondoService:
             raise DataUnavailableError("The Mondo index is not built. Run `mondo-link-data build`.")
         return self._repo
 
+    @property
+    def _resolution(self) -> Resolver:
+        """Resolver bound to the (guarded) repository; preserves data_unavailable."""
+        return Resolver(self.repo)
+
     # -- provenance ------------------------------------------------------------
 
     def _mondo_version(self) -> str | None:
         """Return the built Mondo release string (for grounding), or ``None``."""
         meta = self.repo.read_meta()
         return meta.get("mondo_version") if meta else None
-
-    # -- resolution ------------------------------------------------------------
-
-    def _resolve_term_id(self, term: str) -> str:
-        """Resolve any MONDO id / label / xref CURIE to a canonical MONDO id.
-
-        Cascade: MONDO id (obsolete -> ``WithdrawnEntryError``) -> external xref
-        CURIE -> label/synonym. Raises ``NotFoundError`` / ``AmbiguousQueryError``.
-        """
-        raw = (term or "").strip()
-        if not raw:
-            raise InvalidInputError(
-                "term must be a non-empty MONDO id, label, or xref.", field="term"
-            )
-
-        mondo_id = normalize_mondo_id(raw)
-        if mondo_id:
-            record = self.repo.get_term(mondo_id)
-            if record is None:
-                raise NotFoundError(f"No Mondo term for {mondo_id}.")
-            if record["is_obsolete"]:
-                raise WithdrawnEntryError(
-                    mondo_id,
-                    status="obsolete",
-                    replaced_by=self._replacement_records(record),
-                )
-            return mondo_id
-
-        if infer_xref_source(raw):
-            normalized = normalize_xref(raw)
-            if normalized:
-                matches = self.repo.mondo_for_xref(normalized.upper(), limit=2)
-                if not matches:
-                    raise NotFoundError(f"No Mondo term cross-references {normalized}.")
-                return str(matches[0]["mondo_id"])
-
-        candidates = self.repo.resolve_label(raw.upper())
-        if not candidates:
-            raise self._label_not_found(raw)
-        distinct = {c["mondo_id"] for c in candidates}
-        if len(distinct) == 1:
-            return str(next(iter(distinct)))
-        raise AmbiguousQueryError(
-            f"'{raw}' matches {len(distinct)} Mondo terms; pick one and call get_disease.",
-            candidates=self._label_candidates(candidates),
-        )
-
-    def _label_not_found(self, raw: str) -> NotFoundError:
-        """Build a not_found for a free-text miss, with close-match suggestions.
-
-        Best practice is to embed the *answer* (top search hits) rather than route
-        the client back to the search tool, so the envelope chains to get_disease.
-        """
-        suggestions = self._search_suggestions(raw)
-        if suggestions:
-            message = (
-                f"No exact Mondo term matches '{raw}'. The closest search hits are in "
-                "candidates; open one with get_disease or refine with search_diseases."
-            )
-        else:
-            message = (
-                f"No Mondo term matches '{raw}'. Try a MONDO id, a disease label, or an xref CURIE."
-            )
-        return NotFoundError(message, suggestions=suggestions)
-
-    def _search_suggestions(self, raw: str, *, limit: int = 3) -> list[dict[str, Any]]:
-        """Top FTS hits for a failed label lookup (id + name + score), best-effort."""
-        try:
-            hits, _ = self.repo.search(raw, limit=limit, include_obsolete=False)
-        except Exception:  # pragma: no cover - defensive: never mask the not_found
-            return []
-        return [
-            {"mondo_id": h["mondo_id"], "name": h["name"], "score": h.get("score")} for h in hits
-        ]
-
-    def _replacement_records(self, record: dict[str, Any]) -> list[dict[str, str]]:
-        """Build replacement records (replaced_by + consider) for an obsolete term."""
-        out: list[dict[str, str]] = []
-        seen: set[str] = set()
-        targets: list[str] = []
-        replaced_by = record.get("replaced_by")
-        if replaced_by:
-            targets.append(replaced_by)
-        targets.extend(record.get("consider") or [])
-        for target in targets:
-            canon = normalize_mondo_id(target) or target
-            if canon in seen:
-                continue
-            seen.add(canon)
-            successor = self.repo.get_term(canon)
-            out.append({"mondo_id": canon, "name": successor["name"] if successor else canon})
-        return out
-
-    def _label_candidates(self, candidates: list[dict[str, Any]]) -> list[dict[str, str]]:
-        """Build de-duplicated ambiguity candidates with names."""
-        out: list[dict[str, str]] = []
-        seen: set[str] = set()
-        for cand in candidates:
-            mid = cand["mondo_id"]
-            if mid in seen:
-                continue
-            seen.add(mid)
-            term = self.repo.get_term(mid)
-            out.append(
-                {
-                    "mondo_id": mid,
-                    "name": term["name"] if term else mid,
-                    "label_type": cand["label_type"],
-                }
-            )
-        return out
 
     # -- diagnostics -----------------------------------------------------------
 
@@ -201,7 +83,7 @@ class MondoService:
             raise InvalidInputError(
                 "query must be a non-empty MONDO id, label, or xref.", field="query"
             )
-        match_type, mondo_id = self._classify_resolution(raw)
+        match_type, mondo_id = self._resolution.classify_resolution(raw)
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
             raise NotFoundError(f"No Mondo term for {mondo_id}.")
@@ -216,37 +98,6 @@ class MondoService:
         if record["replaced_by"]:
             out["replaced_by"] = record["replaced_by"]
         return out
-
-    def _classify_resolution(self, raw: str) -> tuple[str, str]:
-        """Resolve ``raw`` and report how the match was made (``match_type``)."""
-        mondo_id = normalize_mondo_id(raw)
-        if mondo_id:
-            record = self.repo.get_term(mondo_id)
-            if record is None:
-                raise NotFoundError(f"No Mondo term for {mondo_id}.")
-            if record["is_obsolete"]:
-                raise WithdrawnEntryError(
-                    mondo_id, status="obsolete", replaced_by=self._replacement_records(record)
-                )
-            return "mondo_id", mondo_id
-        if infer_xref_source(raw):
-            normalized = normalize_xref(raw)
-            if normalized:
-                matches = self.repo.mondo_for_xref(normalized.upper(), limit=2)
-                if matches:
-                    return "xref", matches[0]["mondo_id"]
-                raise NotFoundError(f"No Mondo term cross-references {normalized}.")
-        candidates = self.repo.resolve_label(raw.upper())
-        if not candidates:
-            raise self._label_not_found(raw)
-        distinct = {c["mondo_id"] for c in candidates}
-        if len(distinct) == 1:
-            best = candidates[0]
-            return _LABEL_MATCH_TYPE.get(best["label_type"], "primary"), best["mondo_id"]
-        raise AmbiguousQueryError(
-            f"'{raw}' matches {len(distinct)} Mondo terms; pick one and call get_disease.",
-            candidates=self._label_candidates(candidates),
-        )
 
     # -- search ----------------------------------------------------------------
 
@@ -286,7 +137,7 @@ class MondoService:
         fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Return the full disease record (hierarchy + grouped xrefs)."""
-        mondo_id = self._resolve_term_id(term)
+        mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
             raise NotFoundError(f"No Mondo term for {mondo_id}.")
@@ -346,7 +197,7 @@ class MondoService:
         return self._closure(term, kind="descendants", limit=limit, offset=offset)
 
     def _closure(self, term: str, *, kind: str, limit: int, offset: int = 0) -> dict[str, Any]:
-        mondo_id = self._resolve_term_id(term)
+        mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         limit = max(1, min(limit, _MAX_LIMIT))
         offset = max(0, offset)
@@ -377,7 +228,7 @@ class MondoService:
         return self._neighbours(term, kind="children")
 
     def _neighbours(self, term: str, *, kind: str) -> dict[str, Any]:
-        mondo_id = self._resolve_term_id(term)
+        mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         rows = self.repo.parents(mondo_id) if kind == "parents" else self.repo.children(mondo_id)
         return {
@@ -441,7 +292,7 @@ class MondoService:
         fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Return all cross-ontology mappings for a term, grouped by prefix."""
-        mondo_id = self._resolve_term_id(term)
+        mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         normalized = [p.strip().upper() for p in prefixes if p.strip()] if prefixes else None
         mappings = self._grouped_xrefs(mondo_id, normalized)

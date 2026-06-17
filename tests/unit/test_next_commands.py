@@ -143,6 +143,17 @@ def test_default_error_next_commands() -> None:
     )
 
 
+def test_after_batch_chainers() -> None:
+    resolved = {"results": [{"ok": False}, {"ok": True, "mondo_id": "MONDO:1"}]}
+    _assert_steps(nc.after_resolve_batch(resolved))
+    assert nc.after_resolve_batch(resolved)[0] == nc.cmd("get_disease", term="MONDO:1")
+    _assert_steps(nc.after_get_disease_batch(resolved))
+    assert nc.after_get_disease_batch(resolved)[0] == nc.cmd("map_cross_ontology", term="MONDO:1")
+    # all-failed batch falls back to a safe discovery step
+    _assert_steps(nc.after_resolve_batch({"results": [{"ok": False}]}))
+    _assert_steps(nc.after_get_disease_batch({"results": []}))
+
+
 def test_withdrawn_recovery() -> None:
     _assert_steps(nc.withdrawn_recovery([{"mondo_id": "MONDO:2"}]))
     assert nc.withdrawn_recovery([{"mondo_id": "MONDO:2"}])[0] == nc.cmd(

@@ -190,3 +190,27 @@ def after_cross_ontology(payload: dict[str, Any]) -> list[dict[str, Any]]:
     if not mondo_id:
         return [cmd("get_server_capabilities")]
     return [cmd("get_disease_ancestors", term=mondo_id), cmd("get_disease", term=mondo_id)]
+
+
+def _first_resolved_id(payload: dict[str, Any]) -> str | None:
+    """Return the mondo_id of the first successfully resolved item in a batch."""
+    for item in payload.get("results", []):
+        if item.get("ok") and item.get("mondo_id"):
+            return str(item["mondo_id"])
+    return None
+
+
+def after_resolve_batch(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After resolve_disease_batch: open the first successfully resolved record."""
+    mondo_id = _first_resolved_id(payload)
+    if mondo_id:
+        return [cmd("get_disease", term=mondo_id)]
+    return [cmd("get_server_capabilities")]
+
+
+def after_get_disease_batch(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """After get_disease_batch: map the first resolved record across ontologies."""
+    mondo_id = _first_resolved_id(payload)
+    if mondo_id:
+        return [cmd("map_cross_ontology", term=mondo_id)]
+    return [cmd("get_server_capabilities")]
