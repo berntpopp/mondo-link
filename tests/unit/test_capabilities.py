@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from mondo_link.constants import MAX_BATCH_ITEMS
 from mondo_link.mcp import capabilities as cap
 
 _ERROR_CODES = [
@@ -53,6 +54,14 @@ def test_build_capabilities_core_keys_present() -> None:
 
 def test_error_codes_are_the_seven_code_taxonomy() -> None:
     assert cap.build_capabilities()["error_codes"] == _ERROR_CODES
+
+
+def test_limits_document_the_batch_cap() -> None:
+    # The batch-size cap was previously discoverable only by tripping it; it must be
+    # advertised alongside the search/closure/xref limits.
+    limits = cap.build_capabilities()["limits"]
+    assert limits["max_batch_items"] == MAX_BATCH_ITEMS
+    assert limits["max_batch_items"] == 50
 
 
 def test_capabilities_version_is_stable_content_hash() -> None:

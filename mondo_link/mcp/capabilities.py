@@ -10,6 +10,7 @@ from mondo_link import __version__
 from mondo_link.buildinfo import build_info
 from mondo_link.constants import (
     MATCH_TYPES,
+    MAX_BATCH_ITEMS,
     MONDO_LICENSE,
     PREDICATE_RANK,
     RECOMMENDED_CITATION,
@@ -214,6 +215,7 @@ def build_capabilities() -> dict[str, Any]:
             "max_search_limit": 200,
             "max_closure_limit": 1000,
             "max_xref_limit": 1000,
+            "max_batch_items": MAX_BATCH_ITEMS,
             "default_search_limit": 25,
             "default_closure_limit": 200,
             "default_xref_limit": 50,

@@ -39,6 +39,33 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `resolve_xref.total` reported only the returned page size (never the full match
   count), so it could silently truncate without setting `truncated`; it now uses a
   true distinct-term count.
+- **`resolve_xref` row/total mismatch:** a term reachable via several mapping rows
+  for the same external id (e.g. an OBO `equivalentTo` xref plus an SSSOM
+  `exactMatch`) was returned once per row, so `returned` could exceed the
+  distinct-term `total` and break a client paging off `total`. The reverse lookup
+  now collapses to **one row per distinct Mondo term** (keeping its strongest
+  predicate), so `returned <= total` always holds and offset-paging advances by
+  whole terms.
+- **`get_server_capabilities` missing `_meta.next_commands`:** the discovery root
+  omitted `next_commands`, contradicting both the universal `_meta` invariant and
+  its own `per_call_meta` contract (which lists `next_commands` as guaranteed). It
+  now chains into the canonical `resolve_disease` → record workflow plus a
+  `get_diagnostics` freshness check.
+- **Human-disease prior in fuzzy resolve:** a one-character typo like
+  `resolve_disease("Marfan syndrom")` could surface Mondo's veterinary terms
+  ("Marfan syndrome, FBN1-related, pig/cattle") above the canonical human term,
+  because those names score higher in raw FTS. Fuzzy hits are now fetched in a
+  larger pool and stably re-ranked so non-human-animal terms (descendants of
+  `MONDO:0005583`) sink below human terms — livestock no longer leads the
+  candidates, and a dominant human term resolves cleanly. Genuinely non-human-only
+  queries are unaffected (demotion is a no-op when every hit is non-human).
+
+### Changed
+
+- **Documented batch cap:** `capabilities.limits` now advertises
+  `max_batch_items` (50) alongside the search/closure/xref limits, sourced from a
+  single `constants.MAX_BATCH_ITEMS` shared by the batch tools and the discovery
+  surface — previously the cap was discoverable only by tripping it.
 
 ### Added
 

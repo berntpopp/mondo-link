@@ -11,7 +11,7 @@ from mondo_link.mcp import metrics
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.capabilities import collect_tool_signatures, project_capabilities
 from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
-from mondo_link.mcp.next_commands import cmd
+from mondo_link.mcp.next_commands import after_capabilities, cmd
 from mondo_link.mcp.schemas import CAPABILITIES_SCHEMA, DIAGNOSTICS_SCHEMA
 from mondo_link.mcp.service_adapters import get_mondo_service
 
@@ -45,7 +45,9 @@ def register_discovery_tools(mcp: FastMCP) -> None:
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
             signatures = await collect_tool_signatures(mcp)
-            return project_capabilities(detail, signatures)
+            payload = project_capabilities(detail, signatures)
+            payload.setdefault("_meta", {})["next_commands"] = after_capabilities()
+            return payload
 
         return await run_mcp_tool(
             "get_server_capabilities",

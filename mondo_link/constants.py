@@ -8,6 +8,15 @@ SCHEMA_VERSION = 1
 #: The Mondo ontology root term ("disease or disorder").
 MONDO_ROOT = "MONDO:0000001"
 
+#: Root of Mondo's non-human-animal disease branch. Its descendants are veterinary
+#: terms (e.g. "Marfan syndrome, FBN1-related, pig"); the resolver demotes them below
+#: human terms in the fuzzy fallback so a human-disease query is not led by livestock.
+NON_HUMAN_ANIMAL_ROOT = "MONDO:0005583"
+
+#: Hard cap on items accepted by a single batch tool call (bounds token blowup /
+#: abuse). Surfaced in capabilities.limits and enforced by the batch tools.
+MAX_BATCH_ITEMS = 50
+
 #: Cross-ontology prefixes surfaced as first-class xref sources.
 XREF_PREFIXES = ("OMIM", "ORPHA", "DOID", "NCIT", "UMLS", "MESH", "MEDGEN", "SCTID", "GARD")
 
