@@ -207,6 +207,12 @@ async def test_get_server_capabilities(tools: dict[str, Any]) -> None:
     assert result["success"] is True
     assert result["tool_count"] == len(TOOLS)
     assert isinstance(result["_meta"], dict)
+    # The discovery root must still honour the universal next_commands invariant
+    # (and its own per_call_meta contract, which lists next_commands as guaranteed).
+    steps = result["_meta"]["next_commands"]
+    assert isinstance(steps, list) and steps, "capabilities must carry a next step"
+    assert all(s["tool"] in TOOLS for s in steps)
+    assert steps[0]["tool"] == "resolve_disease"
 
 
 async def test_resolve_disease(tools: dict[str, Any]) -> None:

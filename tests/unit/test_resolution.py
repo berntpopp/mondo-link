@@ -136,8 +136,9 @@ def test_exact_ambiguous_label_beats_fuzzy(service: Any) -> None:
 class _FakeRepo:
     """Repo stub: no exact label match, scripted FTS hits -> drives the fuzzy paths."""
 
-    def __init__(self, hits: list[dict[str, Any]]) -> None:
+    def __init__(self, hits: list[dict[str, Any]], non_human: set[str] | None = None) -> None:
         self._hits = hits
+        self._non_human = set(non_human or ())
 
     def resolve_label(self, label: str) -> list[dict[str, Any]]:
         return []
@@ -146,6 +147,9 @@ class _FakeRepo:
         self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
     ) -> tuple[list[dict[str, Any]], int]:
         return self._hits[:limit], len(self._hits)
+
+    def non_human_animal_ids(self, mondo_ids: list[str]) -> set[str]:
+        return {m for m in mondo_ids if m in self._non_human}
 
 
 def test_fuzzy_near_tie_raises_ambiguous_with_fuzzy_candidates() -> None:
@@ -169,6 +173,39 @@ def test_fuzzy_no_hits_not_found_without_suggestions() -> None:
     with pytest.raises(NotFoundError) as exc:
         resolver.classify_resolution("nothing here")
     assert exc.value.suggestions == []
+
+
+def test_fuzzy_demotes_non_human_animal_terms_so_human_leads() -> None:
+    # Veterinary terms ("..., pig"/"..., cattle") can outrank the human disease in raw
+    # bm25, but the human-disease prior must sink them below human terms so the
+    # canonical human term leads the candidates (resolve_disease("Marfan syndrom")).
+    hits = [
+        _hit("MONDO:1011155", "Marfan syndrome, pig", 100.0),
+        _hit("MONDO:1011156", "Marfan syndrome, cattle", 99.0),
+        _hit("MONDO:0007947", "Marfan syndrome", 3.0),
+        _hit("MONDO:0017309", "neonatal Marfan syndrome", 2.9),
+    ]
+    resolver = Resolver(_FakeRepo(hits, non_human={"MONDO:1011155", "MONDO:1011156"}))
+    with pytest.raises(AmbiguousQueryError) as exc:
+        resolver.classify_resolution("Marfan syndrom")
+    ids = [c["mondo_id"] for c in exc.value.candidates]
+    # the two human terms lead; the livestock terms are demoted to the tail
+    assert ids[:2] == ["MONDO:0007947", "MONDO:0017309"]
+    assert set(ids[2:]) == {"MONDO:1011155", "MONDO:1011156"}
+
+
+def test_fuzzy_demotion_lets_human_term_resolve_over_higher_scored_livestock() -> None:
+    # With the livestock term demoted out of the runner-up slot, a dominant human term
+    # resolves cleanly instead of being dragged into a livestock-led near-tie.
+    hits = [
+        _hit("MONDO:1011155", "Marfan syndrome, pig", FUZZY_MIN_SCORE + 50.0),
+        _hit("MONDO:0007947", "Marfan syndrome", FUZZY_MIN_SCORE + 5.0),
+        _hit("MONDO:0017309", "neonatal", (FUZZY_MIN_SCORE + 5.0) / (FUZZY_DOMINANCE + 0.5)),
+    ]
+    resolver = Resolver(_FakeRepo(hits, non_human={"MONDO:1011155"}))
+    match_type, mondo_id = resolver.classify_resolution("Marfan syndrom")
+    assert match_type == "fuzzy"
+    assert mondo_id == "MONDO:0007947"
 
 
 def test_strict_resolve_term_id_never_fuzzy() -> None:

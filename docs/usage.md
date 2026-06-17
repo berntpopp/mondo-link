@@ -78,7 +78,9 @@ truncated, next_offset?}`; page a large closure forward with `offset`.
 ## Cross-ontology
 
 `resolve_xref(xref_id)` maps an external CURIE back to Mondo, ranked by mapping
-predicate.
+predicate. Each matching Mondo term appears **once** (its strongest predicate); a
+term reachable via several mapping rows for the same id is not double-counted, so
+`returned` never exceeds the distinct-term `total`.
 
 ```
 resolve_xref(xref_id="OMIM:182212", limit=50, offset=0)

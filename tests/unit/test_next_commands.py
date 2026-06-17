@@ -31,6 +31,14 @@ def test_cmd_shape() -> None:
     assert nc.cmd("get_disease", term="MONDO:1")["tool"] in _VALID
 
 
+def test_after_capabilities() -> None:
+    # The discovery root chains into the canonical resolve->record workflow.
+    steps = nc.after_capabilities()
+    _assert_steps(steps)
+    assert steps[0]["tool"] == "resolve_disease"
+    assert {s["tool"] for s in steps} <= _VALID
+
+
 def test_after_resolve_disease() -> None:
     _assert_steps(nc.after_resolve_disease({"mondo_id": "MONDO:1", "query": "x"}))
     assert nc.after_resolve_disease({"mondo_id": "MONDO:1"})[0]["tool"] == "get_disease"
