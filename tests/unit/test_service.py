@@ -90,15 +90,17 @@ def test_resolve_not_found(service: MondoService) -> None:
         service.resolve_disease("MONDO:0000000")
 
 
-def test_resolve_label_miss_attaches_search_suggestions(service: MondoService) -> None:
-    # "huntington" alone is not an exact label/synonym, but FTS finds HD -- the
-    # not_found should embed that answer as a suggestion, not just route to search.
-    with pytest.raises(NotFoundError) as exc:
-        service.resolve_disease("huntington")
-    assert any(s["mondo_id"] == HD for s in exc.value.suggestions)
+def test_resolve_near_miss_label_fuzzy_resolves(service: MondoService) -> None:
+    # "huntington" is not an exact label/synonym but FTS matches only HD: resolve_disease
+    # (the fuzzy-friendly entry) returns it with match_type "fuzzy" rather than 404ing.
+    res = service.resolve_disease("huntington")
+    assert res["mondo_id"] == HD
+    assert res["match_type"] == "fuzzy"
 
 
 def test_get_disease_label_miss_attaches_search_suggestions(service: MondoService) -> None:
+    # get_disease is the STRICT (non-fuzzy) entry: a near-miss still 404s, embedding
+    # the closest hit as a suggestion so the envelope can chain to get_disease.
     with pytest.raises(NotFoundError) as exc:
         service.get_disease("huntington")
     assert any(s["mondo_id"] == HD for s in exc.value.suggestions)

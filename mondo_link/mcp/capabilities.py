@@ -185,7 +185,9 @@ def build_capabilities() -> dict[str, Any]:
         ),
         "match_type_semantics": (
             "resolve_disease.match_type is one of mondo_id | primary | exact_synonym "
-            "| related_synonym | xref (strongest first)."
+            "| related_synonym | fuzzy | xref (strongest first). 'fuzzy' is a "
+            "conservative FTS fallback returned only for a near-miss/acronym label "
+            "with no exact match; a near-tie returns ambiguous_query instead."
         ),
         "predicate_ranking": (
             "Cross-references are ranked by mapping predicate, strongest first: "

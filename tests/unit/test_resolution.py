@@ -8,6 +8,11 @@ The cascade tests use the conftest ``service`` fixture (built from the real
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
+
+from mondo_link.exceptions import NotFoundError
 from mondo_link.services.resolution import (
     FUZZY_DOMINANCE,
     FUZZY_MAX_CANDIDATES,
@@ -70,3 +75,29 @@ def test_zero_second_score_resolves_top() -> None:
     assert kind == "resolve"
     assert isinstance(payload, dict)
     assert payload["mondo_id"] == "MONDO:1"
+
+
+# -- cascade integration (conftest `service` over tests/fixtures/mondo.obo) ----
+
+_SGS = "MONDO:0008426"  # Shprintzen-Goldberg syndrome
+
+
+def test_fuzzy_resolves_near_miss_label(service: Any) -> None:
+    # "Shprintzen Goldberg" (space, no hyphen) is not an exact label/synonym, but
+    # FTS matches only MONDO:0008426 -> resolves with match_type "fuzzy".
+    out = service.resolve_disease("Shprintzen Goldberg")
+    assert out["mondo_id"] == _SGS
+    assert out["match_type"] == "fuzzy"
+
+
+def test_gibberish_still_not_found(service: Any) -> None:
+    with pytest.raises(NotFoundError):
+        service.resolve_disease("zzzzznotadiseasezzzzz")
+
+
+def test_get_disease_stays_strict_on_near_miss(service: Any) -> None:
+    # get_disease is the STRICT (non-fuzzy) entry: a near-miss returns not_found
+    # with the closest hit embedded as a suggestion, rather than silently guessing.
+    with pytest.raises(NotFoundError) as exc:
+        service.get_disease("Shprintzen Goldberg")
+    assert any(s["mondo_id"] == _SGS for s in exc.value.suggestions)
