@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from typing import TYPE_CHECKING, Any
 
@@ -56,6 +57,7 @@ _SUMMARY_KEYS: tuple[str, ...] = (
     "server",
     "server_version",
     "build",
+    "capabilities_version",
     "mondo_version",
     "data_source",
     "research_use_only",
@@ -76,6 +78,14 @@ _SUMMARY_KEYS: tuple[str, ...] = (
 )
 
 
+#: capabilities_version is a content hash of the discovery CONTRACT, cached per
+#: Mondo release so the per-call envelope echo never re-derives it. ``build`` (the
+#: per-deploy git sha / timestamp) and the self-hash are excluded so unrelated
+#: redeploys do not churn the value -- a warm client diffs it to skip re-fetching.
+_HASH_EXCLUDE: frozenset[str] = frozenset({"build", "capabilities_version"})
+_VERSION_CACHE: dict[str, str] = {}
+
+
 def _mondo_version() -> str | None:
     """Best-effort loaded Mondo release (never raises, never forces a build)."""
     try:
@@ -85,9 +95,26 @@ def _mondo_version() -> str | None:
     return diag.get("mondo_version")
 
 
+def _hash_contract(payload: dict[str, Any]) -> str:
+    """Deterministic short hash of the discovery contract (volatile keys removed)."""
+    contract = {k: v for k, v in payload.items() if k not in _HASH_EXCLUDE}
+    blob = json.dumps(contract, sort_keys=True, default=str)
+    return hashlib.sha256(blob.encode("utf-8")).hexdigest()[:16]
+
+
+def capabilities_version() -> str:
+    """Cached content hash of the discovery contract (echoed in every ``_meta``)."""
+    key = _mondo_version() or "unbuilt"
+    cached = _VERSION_CACHE.get(key)
+    if cached is None:
+        cached = build_capabilities()["capabilities_version"]
+        _VERSION_CACHE[key] = cached
+    return cached
+
+
 def build_capabilities() -> dict[str, Any]:
     """Return the discovery surface describing this server."""
-    return {
+    payload: dict[str, Any] = {
         "server": "mondo-link",
         "server_version": __version__,
         "build": build_info(),
@@ -112,7 +139,23 @@ def build_capabilities() -> dict[str, Any]:
             "is declared here and applies to ALL tool outputs; it is not repeated "
             "per-call to conserve context tokens."
         ),
-        "per_call_meta": ["tool", "request_id", "next_commands"],
+        "per_call_meta": [
+            "tool",
+            "request_id",
+            "elapsed_ms",
+            "capabilities_version",
+            "next_commands",
+        ],
+        "capabilities_version_semantics": (
+            "_meta.capabilities_version is a content hash of this discovery contract. "
+            "A warm client caches the last value it saw and skips re-fetching "
+            "get_server_capabilities while it is unchanged."
+        ),
+        "field_projection": (
+            "get_disease and map_cross_ontology accept fields=[...] for a sparse "
+            "projection: top-level keys, or dotted into a group (e.g. 'xrefs.OMIM'). "
+            "Identity anchors (mondo_id, name, mondo_version) are always returned."
+        ),
         "id_normalization": (
             "MONDO ids accepted/returned as both 'MONDO:0008426' and '0008426'; "
             "external xrefs as CURIEs (OMIM:182212, Orphanet:2462, DOID:...)."
@@ -126,15 +169,19 @@ def build_capabilities() -> dict[str, Any]:
         "truncation_contract": (
             "List tools (search_diseases, get_disease_ancestors, "
             "get_disease_descendants, resolve_xref) return total (matches before the "
-            "cap), returned (rows in this payload), limit (cap applied), and truncated "
-            "(total > returned). When truncated is true, _meta.next_commands includes "
-            "a ready-to-call widen step that raises limit. Never infer completeness "
-            "from list length."
+            "cap), returned (rows in this payload), limit (cap applied), offset (rows "
+            "skipped), and truncated (rows remain beyond this page). When truncated is "
+            "true, next_offset carries the offset for the next page and "
+            "_meta.next_commands includes a ready-to-call forward-page step (advance "
+            "offset, no rows re-sent) plus a widen step. Never infer completeness from "
+            "list length."
         ),
         "response_mode_semantics": (
             "standard/full return the complete record (structured synonyms with "
-            "scope/type/sources); compact (default) drops null/empty values and "
-            "collapses synonyms to plain strings; minimal keeps only mondo_id + name."
+            "scope/type/sources, and the full definition on search hits); compact "
+            "(default) drops null/empty values, collapses synonyms to plain strings, "
+            "and returns search hits as mondo_id + name + score + a short "
+            "definition_snippet; minimal keeps only mondo_id + name."
         ),
         "match_type_semantics": (
             "resolve_disease.match_type is one of mondo_id | primary | exact_synonym "
@@ -169,6 +216,8 @@ def build_capabilities() -> dict[str, Any]:
         "read_only": True,
         "notes": MONDO_REFERENCE_NOTES,
     }
+    payload["capabilities_version"] = _hash_contract(payload)
+    return payload
 
 
 async def collect_tool_signatures(mcp: FastMCP) -> dict[str, str]:

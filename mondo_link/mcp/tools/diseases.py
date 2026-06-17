@@ -11,7 +11,7 @@ from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
 from mondo_link.mcp.next_commands import after_get_disease, after_resolve_disease, after_search
 from mondo_link.mcp.schemas import DISEASE_SCHEMA, RESOLVE_DISEASE_SCHEMA, SEARCH_SCHEMA
 from mondo_link.mcp.service_adapters import get_mondo_service
-from mondo_link.mcp.tools._common import QueryStr, ResponseMode, TermStr
+from mondo_link.mcp.tools._common import FieldsArg, QueryStr, ResponseMode, TermStr
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -56,16 +56,21 @@ def register_disease_tools(mcp: FastMCP) -> None:
         tags={"disease", "search"},
         description=(
             "Full-text search over Mondo disease names, synonyms, and definitions "
-            "(FTS, relevance-ranked). Returns {mondo_id, name, definition, score} plus "
-            "a truncation block {total, returned, limit, truncated} (widen step in "
-            "next_commands when truncated). Obsolete terms are excluded unless "
+            "(FTS, relevance-ranked). Returns {mondo_id, name, score} -- compact adds "
+            "a short definition_snippet; standard/full add the complete definition -- "
+            "plus a pagination block {total, returned, limit, offset, truncated, "
+            "next_offset}. When truncated, next_commands carries a forward-page step "
+            "(offset advanced) and a widen step. Obsolete terms are excluded unless "
             "include_obsolete=true. "
-            "Signature: search_diseases(query, limit=, include_obsolete=, response_mode=)."
+            "Signature: search_diseases(query, limit=, offset=, include_obsolete=, response_mode=)."
         ),
     )
     async def search_diseases(
         query: QueryStr,
         limit: Annotated[int, Field(ge=1, le=200, description="Max hits (default 25).")] = 25,
+        offset: Annotated[
+            int, Field(ge=0, description="Rows to skip for forward paging (default 0).")
+        ] = 0,
         include_obsolete: Annotated[
             bool, Field(description="Include obsolete terms (default false).")
         ] = False,
@@ -75,6 +80,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
             payload = get_mondo_service().search_diseases(
                 query,
                 limit=limit,
+                offset=offset,
                 include_obsolete=include_obsolete,
                 response_mode=response_mode,
             )
@@ -98,12 +104,19 @@ def register_disease_tools(mcp: FastMCP) -> None:
             "cross-references, direct parents and children, top-level groupings, "
             "subsets, and obsolescence (replaced_by/consider). The term accepts a "
             "MONDO id, a label/synonym, or an external xref CURIE (resolved first). "
-            "Signature: get_disease(term, response_mode=)."
+            "Pass fields=['xrefs.OMIM', ...] for a sparse projection. "
+            "Signature: get_disease(term, response_mode=, fields=)."
         ),
     )
-    async def get_disease(term: TermStr, response_mode: ResponseMode = "compact") -> dict[str, Any]:
+    async def get_disease(
+        term: TermStr,
+        response_mode: ResponseMode = "compact",
+        fields: FieldsArg = None,
+    ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
-            payload = get_mondo_service().get_disease(term, response_mode=response_mode)
+            payload = get_mondo_service().get_disease(
+                term, response_mode=response_mode, fields=fields
+            )
             payload.setdefault("_meta", {})["next_commands"] = after_get_disease(payload)
             return payload
 

@@ -319,6 +319,31 @@ def test_ancestors_limit(repo: MondoRepository) -> None:
     assert len(anc) == 1
 
 
+def test_ancestors_offset_pages_forward(repo: MondoRepository) -> None:
+    # Page through HD's 4 ancestors two at a time; pages must be disjoint and cover all.
+    page1 = repo.ancestors(HD, limit=2, offset=0)
+    page2 = repo.ancestors(HD, limit=2, offset=2)
+    ids1 = [a["mondo_id"] for a in page1]
+    ids2 = [a["mondo_id"] for a in page2]
+    assert len(ids1) == 2 and len(ids2) == 2
+    assert set(ids1).isdisjoint(ids2)
+    assert set(ids1) | set(ids2) == {NEURODEGEN, NERVOUS, RARE, ROOT}
+
+
+def test_descendants_offset_pages_forward(repo: MondoRepository) -> None:
+    page1 = repo.descendants(ROOT, limit=2, offset=0)
+    page2 = repo.descendants(ROOT, limit=2, offset=2)
+    assert {d["mondo_id"] for d in page1}.isdisjoint({d["mondo_id"] for d in page2})
+
+
+def test_search_offset_pages_forward(repo: MondoRepository) -> None:
+    hits, total = repo.search("disease", limit=1, offset=0, include_obsolete=False)
+    hits2, total2 = repo.search("disease", limit=1, offset=1, include_obsolete=False)
+    assert total == total2  # total is the full count, independent of the page
+    if hits and hits2:
+        assert hits[0]["mondo_id"] != hits2[0]["mondo_id"]
+
+
 def test_descendants_excludes_self(repo: MondoRepository) -> None:
     desc = repo.descendants(NERVOUS, limit=50)
     ids = {d["mondo_id"] for d in desc}
