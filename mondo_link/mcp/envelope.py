@@ -98,6 +98,16 @@ def _classify(exc: BaseException) -> tuple[str, str]:
     return "internal_error", "An internal error occurred. The request was not completed."
 
 
+def classify_exception(exc: BaseException) -> tuple[str, str]:
+    """Public per-item classifier: ``(error_code, client-safe message)``.
+
+    Batch tools catch typed exceptions per item and need the same taxonomy the
+    error envelope applies, without building a whole envelope. Delegates to the
+    shared classifier so single-item and batch error shaping never diverge.
+    """
+    return _classify(exc)
+
+
 def _recovery_action(error_code: str) -> str:
     if error_code in _RETRYABLE:
         return "retry_backoff"
