@@ -19,7 +19,12 @@ from mondo_link.exceptions import (
 )
 from mondo_link.identifiers import infer_xref_source, normalize_mondo_id, normalize_xref
 from mondo_link.services.pagination import page_fields
-from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE, shape_disease
+from mondo_link.services.shaping import (
+    DEFAULT_RESPONSE_MODE,
+    select_fields,
+    shape_disease,
+    shape_search_hit,
+)
 
 if TYPE_CHECKING:
     from mondo_link.data.repository import MondoRepository
@@ -91,9 +96,7 @@ class MondoService:
 
         candidates = self.repo.resolve_label(raw.upper())
         if not candidates:
-            raise NotFoundError(
-                f"No Mondo term matches '{raw}'. Try a MONDO id, a disease label, or an xref CURIE."
-            )
+            raise self._label_not_found(raw)
         distinct = {c["mondo_id"] for c in candidates}
         if len(distinct) == 1:
             return str(next(iter(distinct)))
@@ -101,6 +104,34 @@ class MondoService:
             f"'{raw}' matches {len(distinct)} Mondo terms; pick one and call get_disease.",
             candidates=self._label_candidates(candidates),
         )
+
+    def _label_not_found(self, raw: str) -> NotFoundError:
+        """Build a not_found for a free-text miss, with close-match suggestions.
+
+        Best practice is to embed the *answer* (top search hits) rather than route
+        the client back to the search tool, so the envelope chains to get_disease.
+        """
+        suggestions = self._search_suggestions(raw)
+        if suggestions:
+            message = (
+                f"No exact Mondo term matches '{raw}'. The closest search hits are in "
+                "candidates; open one with get_disease or refine with search_diseases."
+            )
+        else:
+            message = (
+                f"No Mondo term matches '{raw}'. Try a MONDO id, a disease label, or an xref CURIE."
+            )
+        return NotFoundError(message, suggestions=suggestions)
+
+    def _search_suggestions(self, raw: str, *, limit: int = 3) -> list[dict[str, Any]]:
+        """Top FTS hits for a failed label lookup (id + name + score), best-effort."""
+        try:
+            hits, _ = self.repo.search(raw, limit=limit, include_obsolete=False)
+        except Exception:  # pragma: no cover - defensive: never mask the not_found
+            return []
+        return [
+            {"mondo_id": h["mondo_id"], "name": h["name"], "score": h.get("score")} for h in hits
+        ]
 
     def _replacement_records(self, record: dict[str, Any]) -> list[dict[str, str]]:
         """Build replacement records (replaced_by + consider) for an obsolete term."""
@@ -207,9 +238,7 @@ class MondoService:
                 raise NotFoundError(f"No Mondo term cross-references {normalized}.")
         candidates = self.repo.resolve_label(raw.upper())
         if not candidates:
-            raise NotFoundError(
-                f"No Mondo term matches '{raw}'. Try a MONDO id, a disease label, or an xref CURIE."
-            )
+            raise self._label_not_found(raw)
         distinct = {c["mondo_id"] for c in candidates}
         if len(distinct) == 1:
             best = candidates[0]
@@ -226,6 +255,7 @@ class MondoService:
         query: str,
         *,
         limit: int = 25,
+        offset: int = 0,
         include_obsolete: bool = False,
         response_mode: str = DEFAULT_RESPONSE_MODE,
     ) -> dict[str, Any]:
@@ -234,28 +264,26 @@ class MondoService:
         if not raw:
             raise InvalidInputError("query must be a non-empty search string.", field="query")
         limit = max(1, min(limit, 200))
-        hits, total = self.repo.search(raw, limit=limit, include_obsolete=include_obsolete)
-        results: list[dict[str, Any]] = []
-        for hit in hits:
-            row: dict[str, Any] = {
-                "mondo_id": hit["mondo_id"],
-                "name": hit["name"],
-                "score": hit["score"],
-            }
-            if hit.get("definition"):
-                row["definition"] = hit["definition"]
-            results.append(row)
+        offset = max(0, offset)
+        hits, total = self.repo.search(
+            raw, limit=limit, offset=offset, include_obsolete=include_obsolete
+        )
+        results = [shape_search_hit(hit, response_mode) for hit in hits]
         return {
             "query": raw,
             "results": results,
-            **page_fields(total=total, returned=len(results), limit=limit),
+            **page_fields(total=total, returned=len(results), limit=limit, offset=offset),
             "mondo_version": self._mondo_version(),
         }
 
     # -- full record -----------------------------------------------------------
 
     def get_disease(
-        self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE
+        self,
+        term: str,
+        *,
+        response_mode: str = DEFAULT_RESPONSE_MODE,
+        fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Return the full disease record (hierarchy + grouped xrefs)."""
         mondo_id = self._resolve_term_id(term)
@@ -277,7 +305,7 @@ class MondoService:
             "xrefs": self._grouped_xrefs(mondo_id),
             "mondo_version": self._mondo_version(),
         }
-        return shape_disease(payload, response_mode)
+        return select_fields(shape_disease(payload, response_mode), fields)
 
     def _grouped_xrefs(self, mondo_id: str, prefixes: list[str] | None = None) -> dict[str, Any]:
         """Group cross-references by prefix (predicate-ranked within each)."""
@@ -296,32 +324,43 @@ class MondoService:
     # -- hierarchy -------------------------------------------------------------
 
     def get_ancestors(
-        self, term: str, *, limit: int = 200, response_mode: str = DEFAULT_RESPONSE_MODE
+        self,
+        term: str,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+        response_mode: str = DEFAULT_RESPONSE_MODE,
     ) -> dict[str, Any]:
         """Return transitive ancestors of a term (closure walk)."""
-        return self._closure(term, kind="ancestors", limit=limit)
+        return self._closure(term, kind="ancestors", limit=limit, offset=offset)
 
     def get_descendants(
-        self, term: str, *, limit: int = 200, response_mode: str = DEFAULT_RESPONSE_MODE
+        self,
+        term: str,
+        *,
+        limit: int = 200,
+        offset: int = 0,
+        response_mode: str = DEFAULT_RESPONSE_MODE,
     ) -> dict[str, Any]:
         """Return transitive descendants of a term (closure walk)."""
-        return self._closure(term, kind="descendants", limit=limit)
+        return self._closure(term, kind="descendants", limit=limit, offset=offset)
 
-    def _closure(self, term: str, *, kind: str, limit: int) -> dict[str, Any]:
+    def _closure(self, term: str, *, kind: str, limit: int, offset: int = 0) -> dict[str, Any]:
         mondo_id = self._resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         limit = max(1, min(limit, _MAX_LIMIT))
+        offset = max(0, offset)
         if kind == "ancestors":
-            rows = self.repo.ancestors(mondo_id, limit=limit)
+            rows = self.repo.ancestors(mondo_id, limit=limit, offset=offset)
             total = self.repo.count_ancestors(mondo_id)
         else:
-            rows = self.repo.descendants(mondo_id, limit=limit)
+            rows = self.repo.descendants(mondo_id, limit=limit, offset=offset)
             total = self.repo.count_descendants(mondo_id)
         return {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,
             kind: rows,
-            **page_fields(total=total, returned=len(rows), limit=limit),
+            **page_fields(total=total, returned=len(rows), limit=limit, offset=offset),
             "mondo_version": self._mondo_version(),
         }
 
@@ -352,7 +391,12 @@ class MondoService:
     # -- cross-ontology --------------------------------------------------------
 
     def resolve_xref(
-        self, xref_id: str, *, limit: int = 50, response_mode: str = DEFAULT_RESPONSE_MODE
+        self,
+        xref_id: str,
+        *,
+        limit: int = 50,
+        offset: int = 0,
+        response_mode: str = DEFAULT_RESPONSE_MODE,
     ) -> dict[str, Any]:
         """Reverse lookup: external CURIE -> MONDO terms that cross-reference it."""
         raw = (xref_id or "").strip()
@@ -367,7 +411,10 @@ class MondoService:
                 field="xref_id",
             )
         limit = max(1, min(limit, _MAX_LIMIT))
-        matches = self.repo.mondo_for_xref(normalized.upper(), limit=limit)
+        offset = max(0, offset)
+        key = normalized.upper()
+        total = self.repo.count_mondo_for_xref(key)
+        matches = self.repo.mondo_for_xref(key, limit=limit, offset=offset)
         results = [
             {
                 "mondo_id": m["mondo_id"],
@@ -381,7 +428,7 @@ class MondoService:
             "xref_id": raw,
             "normalized": normalized,
             "matches": results,
-            **page_fields(total=len(results), returned=len(results), limit=limit),
+            **page_fields(total=total, returned=len(results), limit=limit, offset=offset),
             "mondo_version": self._mondo_version(),
         }
 
@@ -391,15 +438,19 @@ class MondoService:
         *,
         prefixes: list[str] | None = None,
         response_mode: str = DEFAULT_RESPONSE_MODE,
+        fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Return all cross-ontology mappings for a term, grouped by prefix."""
         mondo_id = self._resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         normalized = [p.strip().upper() for p in prefixes if p.strip()] if prefixes else None
-        return {
+        mappings = self._grouped_xrefs(mondo_id, normalized)
+        payload = {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,
-            "mappings": self._grouped_xrefs(mondo_id, normalized),
+            "mappings": mappings,
+            "count": sum(len(rows) for rows in mappings.values()),
             "prefixes_filter": normalized,
             "mondo_version": self._mondo_version(),
         }
+        return select_fields(payload, fields)

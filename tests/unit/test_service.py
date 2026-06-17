@@ -90,6 +90,26 @@ def test_resolve_not_found(service: MondoService) -> None:
         service.resolve_disease("MONDO:0000000")
 
 
+def test_resolve_label_miss_attaches_search_suggestions(service: MondoService) -> None:
+    # "huntington" alone is not an exact label/synonym, but FTS finds HD -- the
+    # not_found should embed that answer as a suggestion, not just route to search.
+    with pytest.raises(NotFoundError) as exc:
+        service.resolve_disease("huntington")
+    assert any(s["mondo_id"] == HD for s in exc.value.suggestions)
+
+
+def test_get_disease_label_miss_attaches_search_suggestions(service: MondoService) -> None:
+    with pytest.raises(NotFoundError) as exc:
+        service.get_disease("huntington")
+    assert any(s["mondo_id"] == HD for s in exc.value.suggestions)
+
+
+def test_unmatchable_label_has_no_suggestions(service: MondoService) -> None:
+    with pytest.raises(NotFoundError) as exc:
+        service.resolve_disease("zzzznotathing")
+    assert exc.value.suggestions == []
+
+
 def test_resolve_empty_raises(service: MondoService) -> None:
     with pytest.raises(InvalidInputError):
         service.resolve_disease("   ")
@@ -113,6 +133,24 @@ def test_search_blank_raises(service: MondoService) -> None:
 def test_search_punctuation_safe(service: MondoService) -> None:
     res = service.search_diseases("disease (disorder)")
     assert isinstance(res["results"], list)
+
+
+def test_search_compact_returns_snippet_not_full_definition(service: MondoService) -> None:
+    # Compact (default) is the hot path: identity + score + a short snippet only.
+    res = service.search_diseases("huntington", response_mode="compact")
+    hit = next(r for r in res["results"] if r["mondo_id"] == HD)
+    assert "definition" not in hit  # full paragraph reserved for standard/full
+    assert "score" in hit
+    if hit.get("definition_snippet"):
+        assert len(hit["definition_snippet"]) <= 141
+
+
+def test_search_standard_returns_full_definition(service: MondoService) -> None:
+    res = service.search_diseases("huntington", response_mode="standard")
+    hit = next(r for r in res["results"] if r["mondo_id"] == HD)
+    assert "definition_snippet" not in hit
+    # the HD fixture term carries a definition, returned in full here
+    assert hit.get("definition")
 
 
 # -- full record --------------------------------------------------------------
@@ -162,6 +200,29 @@ def test_get_ancestors_page_fields(service: MondoService) -> None:
     assert res["returned"] == 2
     assert res["truncated"] is True
     assert len(res["ancestors"]) == 2
+
+
+def test_get_ancestors_offset_paging(service: MondoService) -> None:
+    page1 = service.get_ancestors("MONDO:0007739", limit=2, offset=0)
+    page2 = service.get_ancestors("MONDO:0007739", limit=2, offset=2)
+    assert page1["offset"] == 0
+    assert page1["next_offset"] == 2
+    assert page1["truncated"] is True
+    assert page2["offset"] == 2
+    assert page2["truncated"] is False  # last page
+    ids1 = {a["mondo_id"] for a in page1["ancestors"]}
+    ids2 = {a["mondo_id"] for a in page2["ancestors"]}
+    assert ids1.isdisjoint(ids2)
+    assert len(ids1 | ids2) == 4  # full closure covered across two pages
+
+
+def test_resolve_xref_total_is_accurate_for_paging(service: MondoService) -> None:
+    # total must be the FULL count (not just the returned page) so truncation shows.
+    page = service.resolve_xref("OMIM:143100", limit=1, offset=0)
+    assert page["total"] == 2
+    assert page["returned"] == 1
+    assert page["truncated"] is True
+    assert page["next_offset"] == 1
 
 
 def test_get_descendants_page_fields(service: MondoService) -> None:
@@ -217,6 +278,9 @@ def test_map_cross_ontology_all(service: MondoService) -> None:
     assert res["mondo_id"] == HD
     assert set(res["mappings"]) == {"OMIM", "DOID", "ORPHA", "NCIT"}
     assert res["prefixes_filter"] is None
+    # ``count`` is the total mappings across every prefix group.
+    assert res["count"] == sum(len(rows) for rows in res["mappings"].values())
+    assert res["count"] >= 4
 
 
 def test_map_cross_ontology_prefix_filter(service: MondoService) -> None:

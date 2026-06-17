@@ -27,6 +27,9 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
 
 _ClosureLimit = Annotated[int, Field(ge=1, le=1000, description="Max rows returned (default 200).")]
+_ClosureOffset = Annotated[
+    int, Field(ge=0, description="Rows to skip for forward paging (default 0).")
+]
 
 
 def register_hierarchy_tools(mcp: FastMCP) -> None:
@@ -40,17 +43,23 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         tags={"disease", "hierarchy", "closure"},
         description=(
             "Return all transitive is_a ancestors (broader diseases) of a Mondo term "
-            "via the precomputed closure, with a truncation block. Use "
-            "get_disease_parents for only the immediate parents. "
-            "Signature: get_disease_ancestors(term, limit=, response_mode=)."
+            "via the precomputed closure, with a pagination block {total, returned, "
+            "limit, offset, truncated, next_offset}. When truncated, next_commands "
+            "carries a forward-page step (offset) so you can walk a >limit closure "
+            "without re-sending rows. Use get_disease_parents for only the immediate "
+            "parents. "
+            "Signature: get_disease_ancestors(term, limit=, offset=, response_mode=)."
         ),
     )
     async def get_disease_ancestors(
-        term: TermStr, limit: _ClosureLimit = 200, response_mode: ResponseMode = "compact"
+        term: TermStr,
+        limit: _ClosureLimit = 200,
+        offset: _ClosureOffset = 0,
+        response_mode: ResponseMode = "compact",
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_ancestors(
-                term, limit=limit, response_mode=response_mode
+                term, limit=limit, offset=offset, response_mode=response_mode
             )
             payload.setdefault("_meta", {})["next_commands"] = after_ancestors(payload)
             return payload
@@ -69,17 +78,23 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         tags={"disease", "hierarchy", "closure"},
         description=(
             "Return all transitive is_a descendants (more specific diseases) of a "
-            "Mondo term via the precomputed closure, with a truncation block. Use "
-            "get_disease_children for only the immediate children. "
-            "Signature: get_disease_descendants(term, limit=, response_mode=)."
+            "Mondo term via the precomputed closure, with a pagination block {total, "
+            "returned, limit, offset, truncated, next_offset}. When truncated, "
+            "next_commands carries a forward-page step (offset) so you can walk a "
+            ">limit closure without re-sending rows. Use get_disease_children for only "
+            "the immediate children. "
+            "Signature: get_disease_descendants(term, limit=, offset=, response_mode=)."
         ),
     )
     async def get_disease_descendants(
-        term: TermStr, limit: _ClosureLimit = 200, response_mode: ResponseMode = "compact"
+        term: TermStr,
+        limit: _ClosureLimit = 200,
+        offset: _ClosureOffset = 0,
+        response_mode: ResponseMode = "compact",
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_descendants(
-                term, limit=limit, response_mode=response_mode
+                term, limit=limit, offset=offset, response_mode=response_mode
             )
             payload.setdefault("_meta", {})["next_commands"] = after_descendants(payload)
             return payload

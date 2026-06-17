@@ -56,6 +56,7 @@ class FakeService:
         query: str,
         *,
         limit: int = 25,
+        offset: int = 0,
         include_obsolete: bool = False,
         response_mode: str = "compact",
     ) -> dict[str, Any]:
@@ -65,11 +66,14 @@ class FakeService:
             "total": 1,
             "returned": 1,
             "limit": limit,
+            "offset": offset,
             "truncated": False,
             "mondo_version": _VERSION,
         }
 
-    def get_disease(self, term: str, *, response_mode: str = "compact") -> dict[str, Any]:
+    def get_disease(
+        self, term: str, *, response_mode: str = "compact", fields: list[str] | None = None
+    ) -> dict[str, Any]:
         if self.raise_not_found_on_get_disease:
             raise NotFoundError(f"No Mondo term for {term}.")
         return {
@@ -85,7 +89,7 @@ class FakeService:
         }
 
     def get_ancestors(
-        self, term: str, *, limit: int = 200, response_mode: str = "compact"
+        self, term: str, *, limit: int = 200, offset: int = 0, response_mode: str = "compact"
     ) -> dict[str, Any]:
         return {
             "mondo_id": _MONDO,
@@ -94,12 +98,13 @@ class FakeService:
             "total": 1,
             "returned": 1,
             "limit": limit,
+            "offset": offset,
             "truncated": False,
             "mondo_version": _VERSION,
         }
 
     def get_descendants(
-        self, term: str, *, limit: int = 200, response_mode: str = "compact"
+        self, term: str, *, limit: int = 200, offset: int = 0, response_mode: str = "compact"
     ) -> dict[str, Any]:
         return {
             "mondo_id": _MONDO,
@@ -108,6 +113,7 @@ class FakeService:
             "total": 0,
             "returned": 0,
             "limit": limit,
+            "offset": offset,
             "truncated": False,
             "mondo_version": _VERSION,
         }
@@ -131,7 +137,7 @@ class FakeService:
         }
 
     def resolve_xref(
-        self, xref_id: str, *, limit: int = 50, response_mode: str = "compact"
+        self, xref_id: str, *, limit: int = 50, offset: int = 0, response_mode: str = "compact"
     ) -> dict[str, Any]:
         return {
             "xref_id": xref_id,
@@ -140,6 +146,7 @@ class FakeService:
             "total": 1,
             "returned": 1,
             "limit": limit,
+            "offset": offset,
             "truncated": False,
             "mondo_version": _VERSION,
         }
@@ -150,11 +157,13 @@ class FakeService:
         *,
         prefixes: list[str] | None = None,
         response_mode: str = "compact",
+        fields: list[str] | None = None,
     ) -> dict[str, Any]:
         return {
             "mondo_id": _MONDO,
             "name": _NAME,
             "mappings": {"OMIM": [{"object_id": "OMIM:182212", "predicate": "exactMatch"}]},
+            "count": 1,
             "prefixes_filter": prefixes,
             "mondo_version": _VERSION,
         }

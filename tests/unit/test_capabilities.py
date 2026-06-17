@@ -54,6 +54,22 @@ def test_error_codes_are_the_seven_code_taxonomy() -> None:
     assert cap.build_capabilities()["error_codes"] == _ERROR_CODES
 
 
+def test_capabilities_version_is_stable_content_hash() -> None:
+    payload = cap.build_capabilities()
+    version = payload["capabilities_version"]
+    assert isinstance(version, str) and version
+    # stable across calls (a warm client diffs it to skip re-fetching)
+    assert cap.capabilities_version() == version
+    assert cap.capabilities_version() == cap.capabilities_version()
+    # the self-hash field is excluded from the hashed contract (no recursion)
+    assert version not in {"build", "capabilities_version"}
+
+
+def test_capabilities_version_in_summary() -> None:
+    summary = cap.project_capabilities("summary", tool_signatures={})
+    assert "capabilities_version" in summary
+
+
 def test_project_capabilities_summary_vs_full() -> None:
     full = cap.project_capabilities(
         "full", tool_signatures={"resolve_disease": "resolve_disease(query)"}

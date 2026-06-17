@@ -48,6 +48,43 @@ def test_after_search() -> None:
     assert any(c["tool"] == "search_diseases" and c["arguments"].get("limit") for c in widened)
 
 
+def test_page_cmd_and_forward_paging() -> None:
+    assert nc.page_cmd("search_diseases", {"query": "x"}, 25) == {
+        "tool": "search_diseases",
+        "arguments": {"query": "x", "offset": 25},
+    }
+    paged = nc.after_search(
+        "x",
+        {
+            "results": [{"mondo_id": "MONDO:1"}],
+            "truncated": True,
+            "total": 90,
+            "next_offset": 25,
+        },
+    )
+    _assert_steps(paged)
+    # forward-page step (offset) AND widen step (limit) are both offered
+    assert any(c["arguments"].get("offset") == 25 for c in paged)
+    assert any(c["arguments"].get("limit") for c in paged)
+
+
+def test_forward_paging_on_closures_and_xref() -> None:
+    anc = nc.after_ancestors(
+        {"mondo_id": "MONDO:1", "truncated": True, "total": 500, "next_offset": 200}
+    )
+    assert any(c["arguments"].get("offset") == 200 for c in anc)
+    xref = nc.after_resolve_xref(
+        {
+            "matches": [{"mondo_id": "MONDO:1"}],
+            "xref_id": "OMIM:1",
+            "truncated": True,
+            "total": 90,
+            "next_offset": 50,
+        }
+    )
+    assert any(c["arguments"].get("offset") == 50 for c in xref)
+
+
 def test_after_get_disease() -> None:
     _assert_steps(nc.after_get_disease({"mondo_id": "MONDO:1"}))
     _assert_steps(nc.after_get_disease({}))

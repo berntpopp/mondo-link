@@ -5,13 +5,14 @@ _meta}` on success, or `{success: false, error_code, message, retryable,
 recovery_action, _meta}` on error. `_meta.next_commands` lists ready-to-call
 follow-ups — follow them rather than guessing. `response_mode` ∈ `minimal |
 compact | standard | full` (default `compact`). Every record payload echoes
-`mondo_version` for grounding.
+`mondo_version` for grounding, and every `_meta` echoes `capabilities_version`
+(diff it to skip re-fetching capabilities while unchanged).
 
 ## Discovery
 
 ```
-get_server_capabilities(detail="summary")   # tools, signatures, workflows, errors, limits
-get_diagnostics()                            # index_built, mondo_version, counts, build
+get_server_capabilities(detail="summary")   # tools, signatures, workflows, errors, limits, capabilities_version
+get_diagnostics()                            # index_built, mondo_version, counts, build, runtime (p50/p95/p99)
 ```
 
 Call `get_server_capabilities` first in a cold session, or read the
@@ -33,20 +34,25 @@ with `candidates`. An obsolete id returns `not_found` with `replaced_by`.
 
 ## Search
 
-`search_diseases(query, limit=25, include_obsolete=false)` is FTS over name,
-synonyms, and definition.
+`search_diseases(query, limit=25, offset=0, include_obsolete=false)` is FTS over
+name, synonyms, and definition. In `compact` (default) each hit is
+`{mondo_id, name, score, definition_snippet}` (snippet ≤140 chars); `standard`/
+`full` return the complete `definition`.
 
 ```
 search_diseases(query="marfanoid craniosynostosis")
-→ {results: [{mondo_id, name, definition, score}], total, returned, limit, truncated, ...}
+→ {results: [{mondo_id, name, score, definition_snippet}],
+   total, returned, limit, offset, truncated, next_offset?, ...}
 ```
 
-When `truncated` is true, `_meta.next_commands` includes a widen step.
+When `truncated` is true, `_meta.next_commands` includes a forward-page step
+(advance `offset`, no rows re-sent) and a widen step.
 
 ## The record
 
-`get_disease(term)` accepts a MONDO id, a label/synonym, or an external xref
-(resolved first).
+`get_disease(term, response_mode=, fields=)` accepts a MONDO id, a label/synonym,
+or an external xref (resolved first). Pass `fields=["xrefs.OMIM", ...]` for a
+sparse projection (identity anchors are always returned).
 
 ```
 get_disease(term="MONDO:0008426")
@@ -54,17 +60,20 @@ get_disease(term="MONDO:0008426")
    parents[], children[], top_groupings[], subsets[], obsolete, replaced_by, mondo_version}
 ```
 
+A free-text label miss returns `not_found` with the closest hits in `candidates`
+and `_meta.next_commands` chaining to `get_disease` on the top hit.
+
 ## Hierarchy
 
 ```
 get_disease_parents(term)        # direct is_a parents
 get_disease_children(term)       # direct is_a children
-get_disease_ancestors(term, limit=200)    # transitive (closure)
-get_disease_descendants(term, limit=200)  # transitive (closure)
+get_disease_ancestors(term, limit=200, offset=0)    # transitive (closure)
+get_disease_descendants(term, limit=200, offset=0)  # transitive (closure)
 ```
 
-Ancestors/descendants carry a truncation block `{total, returned, limit,
-truncated}`.
+Ancestors/descendants carry a pagination block `{total, returned, limit, offset,
+truncated, next_offset?}`; page a large closure forward with `offset`.
 
 ## Cross-ontology
 
@@ -72,16 +81,17 @@ truncated}`.
 predicate.
 
 ```
-resolve_xref(xref_id="OMIM:182212")
-→ {xref_id, normalized: "OMIM:182212", matches: [{mondo_id, name, predicate, origin}], ...}
+resolve_xref(xref_id="OMIM:182212", limit=50, offset=0)
+→ {xref_id, normalized: "OMIM:182212", matches: [{mondo_id, name, predicate, origin}],
+   total, returned, limit, offset, truncated, next_offset?, ...}
 ```
 
-`map_cross_ontology(term, prefixes=None)` lists a term's mappings grouped by
-prefix.
+`map_cross_ontology(term, prefixes=None, fields=)` lists a term's mappings grouped
+by prefix (`fields=["mappings.OMIM"]` for a sparse projection).
 
 ```
 map_cross_ontology(term="MONDO:0008426", prefixes=["OMIM", "ORPHA"])
-→ {mondo_id, name, mappings: {OMIM: [{object_id, predicate, origin, source}], ORPHA: [...]}, ...}
+→ {mondo_id, name, count, mappings: {OMIM: [{object_id, predicate, origin, source}], ORPHA: [...]}, ...}
 ```
 
 Predicate ranking: `exactMatch > equivalentTo > closeMatch > narrowMatch >

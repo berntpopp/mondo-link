@@ -35,11 +35,33 @@ _STR_NULL = {"type": ["string", "null"]}
 _INT = {"type": "integer"}
 _BOOL = {"type": "boolean"}
 _ARR = {"type": "array"}
+_ARR_NULL = {"type": ["array", "null"]}
 _OBJ = {"type": "object", "additionalProperties": True}
+
+#: One cross-reference row (predicate-ranked) within a prefix group.
+_XREF_ENTRY = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "object_id": _STR,
+        "predicate": _STR,
+        "origin": _STR,
+        "source": _STR_NULL,
+    },
+}
+
+#: Cross-references grouped by target prefix: ``{"OMIM": [entry, ...], ...}``.
+#: Declared as an object (NOT an array) so the grouped payload validates against
+#: its own schema -- the historical leak was declaring this shape as ``array``.
+_GROUPED_XREFS = {
+    "type": "object",
+    "additionalProperties": {"type": "array", "items": _XREF_ENTRY},
+}
 
 CAPABILITIES_SCHEMA = _envelope(
     server=_STR,
     server_version=_STR,
+    capabilities_version=_STR,
     mondo_version=_STR,
     tools=_ARR,
     response_modes=_ARR,
@@ -56,6 +78,7 @@ DIAGNOSTICS_SCHEMA = _envelope(
     schema_version=_INT,
     built_utc=_STR,
     build=_OBJ,
+    runtime=_OBJ,
 )
 
 RESOLVE_DISEASE_SCHEMA = _envelope(
@@ -68,14 +91,28 @@ RESOLVE_DISEASE_SCHEMA = _envelope(
     mondo_version=_STR_NULL,
 )
 
+_SEARCH_HIT = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "mondo_id": _STR,
+        "name": _STR,
+        "score": {"type": "number"},
+        "definition": _STR_NULL,
+        "definition_snippet": _STR,
+    },
+}
+
 SEARCH_SCHEMA = _envelope(
     query=_STR,
     include_obsolete=_BOOL,
     total=_INT,
     returned=_INT,
     limit=_INT,
+    offset=_INT,
+    next_offset=_INT,
     truncated=_BOOL,
-    results=_ARR,
+    results={"type": "array", "items": _SEARCH_HIT},
 )
 
 DISEASE_SCHEMA = _envelope(
@@ -83,9 +120,11 @@ DISEASE_SCHEMA = _envelope(
     name=_STR,
     definition=_STR_NULL,
     synonyms=_ARR,
-    xrefs=_ARR,
+    xrefs=_GROUPED_XREFS,
     parents=_ARR,
     children=_ARR,
+    top_groupings=_ARR,
+    subsets=_ARR,
     obsolete=_BOOL,
     match_type=_STR_NULL,
     mondo_version=_STR_NULL,
@@ -97,6 +136,8 @@ ANCESTORS_SCHEMA = _envelope(
     total=_INT,
     returned=_INT,
     limit=_INT,
+    offset=_INT,
+    next_offset=_INT,
     truncated=_BOOL,
     ancestors=_ARR,
 )
@@ -107,6 +148,8 @@ DESCENDANTS_SCHEMA = _envelope(
     total=_INT,
     returned=_INT,
     limit=_INT,
+    offset=_INT,
+    next_offset=_INT,
     truncated=_BOOL,
     descendants=_ARR,
 )
@@ -127,10 +170,13 @@ CHILDREN_SCHEMA = _envelope(
 
 RESOLVE_XREF_SCHEMA = _envelope(
     xref_id=_STR,
+    normalized=_STR_NULL,
     prefix=_STR_NULL,
     total=_INT,
     returned=_INT,
     limit=_INT,
+    offset=_INT,
+    next_offset=_INT,
     truncated=_BOOL,
     matches=_ARR,
 )
@@ -138,7 +184,8 @@ RESOLVE_XREF_SCHEMA = _envelope(
 CROSS_ONTOLOGY_SCHEMA = _envelope(
     mondo_id=_STR,
     name=_STR_NULL,
-    prefixes=_ARR,
+    mappings=_GROUPED_XREFS,
     count=_INT,
-    mappings=_ARR,
+    prefixes_filter=_ARR_NULL,
+    mondo_version=_STR_NULL,
 )
