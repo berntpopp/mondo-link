@@ -95,3 +95,24 @@ async def test_map_cross_ontology_outputs_validate_all_modes(tool_map: dict[str,
         assert ok["success"] is True
     err = await _check(tool_map, "map_cross_ontology", term=_MISSING)
     assert err["success"] is False
+
+
+async def test_batch_outputs_validate(tool_map: dict[str, Any]) -> None:
+    # Partial-success (valid + missing item), the over-cap invalid_input error, and
+    # a get_disease_batch row carrying a grouped ``xrefs`` object must all validate.
+    for mode in RESPONSE_MODES:
+        ok = await _check(
+            tool_map,
+            "resolve_disease_batch",
+            queries=["Shprintzen-Goldberg syndrome", _MISSING],
+            response_mode=mode,
+        )
+        assert ok["success"] is True and ok["count"] == 2
+        assert ok["results"][0]["ok"] is True and ok["results"][1]["ok"] is False
+    capped = await _check(tool_map, "resolve_disease_batch", queries=["x"] * 51)
+    assert capped["success"] is False and capped["error_code"] == "invalid_input"
+    for mode in RESPONSE_MODES:
+        got = await _check(
+            tool_map, "get_disease_batch", terms=[_SGS, _MISSING], response_mode=mode
+        )
+        assert got["results"][0]["ok"] is True and got["results"][1]["ok"] is False
