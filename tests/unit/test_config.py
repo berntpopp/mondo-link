@@ -10,7 +10,7 @@ def test_data_defaults() -> None:
 
     cfg = MondoDataConfig()
     assert cfg.db_filename == "mondo.sqlite"
-    assert cfg.obo_url == "http://purl.obolibrary.org/obo/mondo.obo"
+    assert cfg.obo_url == "https://purl.obolibrary.org/obo/mondo.obo"
     assert cfg.sssom_url.endswith("mondo.sssom.tsv")
     assert cfg.sssom_url.startswith("https://")
     assert cfg.auto_bootstrap is True
