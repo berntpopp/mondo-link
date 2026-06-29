@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mondo-link"
-version = "0.1.0"
+version = "0.1.1"
 description = "MCP/API server that grounds disease work in the Mondo Disease Ontology"
 readme = "README.md"
 license = { text = "MIT" }
