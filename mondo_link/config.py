@@ -23,7 +23,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parents[1]
 _DEFAULT_DATA_DIR = _PROJECT_ROOT / "data"
 
 #: Monarch publishes the Mondo OBO release at this PURL.
-DEFAULT_OBO_URL = "http://purl.obolibrary.org/obo/mondo.obo"
+DEFAULT_OBO_URL = "https://purl.obolibrary.org/obo/mondo.obo"
 
 #: Mondo publishes the consolidated SSSOM cross-ontology mappings in-repo. (The
 #: ``obo/mondo.sssom.tsv`` PURL 404s; the OBO already carries dbxrefs, so SSSOM
