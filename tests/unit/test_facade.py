@@ -164,14 +164,16 @@ async def test_capabilities_lists_all_tools(facade: Any, structured: Any) -> Non
 
 
 async def test_meta_verbosity_tiers_by_response_mode(facade: Any, structured: Any) -> None:
-    # minimal: the caller opts out of guidance -> only the trace essentials, no
-    # next_commands / capabilities_version / elapsed_ms tax on every call.
+    # minimal: the caller opts out of guidance -> only the trace essentials plus
+    # the untiered disclaimer, no next_commands / capabilities_version /
+    # elapsed_ms tax on every call.
     minimal = structured(
         await facade.call_tool(
             "resolve_disease", {"query": "Shprintzen-Goldberg syndrome", "response_mode": "minimal"}
         )
     )
-    assert set(minimal["_meta"]) == {"tool", "request_id"}
+    assert set(minimal["_meta"]) == {"tool", "request_id", "unsafe_for_clinical_use"}
+    assert minimal["_meta"]["unsafe_for_clinical_use"] is True
 
     # compact (default): keeps the workflow guidance + the warm-client cache key,
     # but drops the elapsed_ms observability echo.
