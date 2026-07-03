@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from fastmcp import FastMCP
 
+from mondo_link import __version__
 from mondo_link.mcp.capabilities import register_capability_resources
 from mondo_link.mcp.middleware import ArgValidationMiddleware
 from mondo_link.mcp.resources import MONDO_SERVER_INSTRUCTIONS
@@ -20,6 +21,7 @@ def create_mondo_mcp() -> FastMCP:
     """Build a FastMCP instance with all mondo-link tools, resources, middleware."""
     mcp = FastMCP(
         name="mondo-link",
+        version=__version__,
         instructions=MONDO_SERVER_INSTRUCTIONS,
         mask_error_details=True,
     )
