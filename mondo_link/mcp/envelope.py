@@ -33,11 +33,18 @@ from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
 logger = logging.getLogger(__name__)
 
-# Per-call _meta is kept lean: static provenance (research-use restriction,
-# citation, Mondo release) lives ONLY in get_server_capabilities. Per-call _meta
-# carries only dynamic fields: tool, request_id, [next_commands, capabilities_version,
-# elapsed_ms] -- and those three are tiered by response_mode (see _shape_meta).
+# Per-call _meta is kept lean: static provenance (citation, Mondo release) lives
+# ONLY in get_server_capabilities. Per-call _meta carries dynamic fields: tool,
+# request_id, unsafe_for_clinical_use, [next_commands, capabilities_version,
+# elapsed_ms] -- the bracketed three are tiered by response_mode (see
+# _shape_meta), but `unsafe_for_clinical_use` is a fleet-wide disclaimer
+# standard (Response-Envelope Standard v1) and is therefore untiered: it is
+# emitted on every call, success or error, at every response_mode -- including
+# `minimal`.
 _RETRYABLE = {"rate_limited", "upstream_unavailable", "data_unavailable"}
+#: Fleet-wide disclaimer emitted verbatim in every per-call `_meta` (all
+#: response_modes, success and error paths). See Response-Envelope Standard v1.
+_UNSAFE_FOR_CLINICAL_USE = True
 
 
 @dataclass
@@ -128,7 +135,11 @@ def _error_envelope(exc: BaseException, context: McpErrorContext) -> dict[str, A
         "message": message,
         "retryable": error_code in _RETRYABLE,
         "recovery_action": _recovery_action(error_code),
-        "_meta": {"tool": context.tool_name, "request_id": _request_id()},
+        "_meta": {
+            "tool": context.tool_name,
+            "request_id": _request_id(),
+            "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
+        },
     }
     if isinstance(exc, InvalidInputError):
         if exc.field is not None:
@@ -199,6 +210,7 @@ def build_arg_error_envelope(
             "_meta": {
                 "tool": tool_name,
                 "request_id": _request_id(),
+                "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
                 "next_commands": [cmd("get_server_capabilities")],
             },
         }
@@ -222,6 +234,7 @@ def build_arg_error_envelope(
         "_meta": {
             "tool": tool_name,
             "request_id": _request_id(),
+            "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
             "next_commands": [cmd("get_server_capabilities")],
         },
     }
@@ -237,9 +250,9 @@ def _stamp_capabilities_version(meta: dict[str, Any]) -> None:
 def _shape_meta(meta: dict[str, Any], response_mode: str) -> dict[str, Any]:
     """Tier ``_meta`` verbosity by ``response_mode`` to control the per-call token tax.
 
-    - ``minimal``: the trace essentials only -- ``{tool, request_id}``. The caller
-      explicitly opted out of guidance, so ``next_commands`` / ``capabilities_version``
-      / ``elapsed_ms`` are dropped.
+    - ``minimal``: the trace essentials plus the disclaimer -- ``{tool, request_id,
+      unsafe_for_clinical_use}``. The caller explicitly opted out of guidance, so
+      ``next_commands`` / ``capabilities_version`` / ``elapsed_ms`` are dropped.
     - ``compact`` (default): keep ``next_commands`` (workflow guidance) and
       ``capabilities_version`` (the warm-client cache key the discovery contract leans
       on), but drop the ``elapsed_ms`` observability echo from the hot path -- it is
@@ -248,9 +261,15 @@ def _shape_meta(meta: dict[str, Any], response_mode: str) -> dict[str, Any]:
 
     The universal ``next_commands`` invariant therefore holds for ``compact`` and
     richer (every default response still chains); ``minimal`` is the documented opt-out.
+    ``unsafe_for_clinical_use`` is never tiered away -- it is present at every
+    ``response_mode`` (Response-Envelope Standard v1).
     """
     if response_mode == "minimal":
-        return {"tool": meta["tool"], "request_id": meta["request_id"]}
+        return {
+            "tool": meta["tool"],
+            "request_id": meta["request_id"],
+            "unsafe_for_clinical_use": meta["unsafe_for_clinical_use"],
+        }
     if response_mode in ("standard", "full"):
         return meta
     return {k: v for k, v in meta.items() if k != "elapsed_ms"}
@@ -275,6 +294,7 @@ async def run_mcp_tool(
                 **existing_meta,
                 "tool": tool_name,
                 "request_id": _request_id(),
+                "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
                 "elapsed_ms": elapsed,
             }
             _stamp_capabilities_version(meta)

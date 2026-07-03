@@ -21,14 +21,6 @@ Ratified contract under test:
 Known drift vs the fleet-wide aspirational standard (asserted here as ground
 truth, not glossed over):
 
-- ``_meta.unsafe_for_clinical_use`` is **not** emitted on any per-call
-  envelope (success or error). This repo deliberately keeps per-call ``_meta``
-  lean (see the module docstring of ``mcp/envelope.py``): the research-use /
-  not-clinical-decision-support disclaimer lives only in
-  ``get_server_capabilities`` (``research_use_only`` / ``research_use_notice``
-  fields), not echoed on every call. If this flag is added later, the
-  ``"unsafe_for_clinical_use" not in meta`` assertions below must be updated
-  deliberately -- that is the intended trip-wire, not a false failure.
 - The primary payload key is **not** forced to ``results``/``result``.
   ``genefoundry-router``'s own standard doc (``RESPONSE-ENVELOPE-STANDARD-v1``)
   explicitly marks that renaming as "not yet the enforced current fleet gate"
@@ -92,25 +84,25 @@ async def test_success_envelope_preserves_a_results_list_payload_untouched() -> 
     assert "error" not in result
 
 
-async def test_success_meta_omits_unsafe_for_clinical_use_flag_known_gap() -> None:
-    """Ground truth: per-call `_meta` does not carry `unsafe_for_clinical_use`.
-
-    This is a real gap against the fleet-wide aspirational standard (see module
-    docstring) -- asserted explicitly, not glossed over, so it shows up as an
-    intentional change (not a silent regression) if ever fixed.
+async def test_success_meta_carries_unsafe_for_clinical_use_flag() -> None:
+    """Fleet disclaimer standard: per-call `_meta` carries
+    `unsafe_for_clinical_use: True` on every success response, at every
+    `response_mode` -- including `minimal`, which otherwise drops everything
+    but the trace essentials.
     """
 
     async def call() -> dict[str, Any]:
         return {"mondo_id": "MONDO:0008426"}
 
-    result = await run_mcp_tool(
-        "get_disease",
-        call,
-        context=McpErrorContext("get_disease", response_mode="full"),
-    )
+    for response_mode in ("minimal", "compact", "standard", "full"):
+        result = await run_mcp_tool(
+            "get_disease",
+            call,
+            context=McpErrorContext("get_disease", response_mode=response_mode),
+        )
 
-    assert result["success"] is True
-    assert "unsafe_for_clinical_use" not in result["_meta"]
+        assert result["success"] is True
+        assert result["_meta"]["unsafe_for_clinical_use"] is True
 
 
 # --- error envelope: flat banner, never nested, never a bare exception ------
@@ -161,16 +153,20 @@ async def test_error_envelope_retryable_true_for_upstream_style_failures() -> No
     assert "error" not in result
 
 
-async def test_error_meta_omits_unsafe_for_clinical_use_flag_known_gap() -> None:
-    """Ground truth: the error-path `_meta` also does not carry
-    `unsafe_for_clinical_use` (same known gap as the success path)."""
-    result = await run_mcp_tool(
-        "get_disease",
-        _raiser(NotFoundError("No matching Mondo record found.")),
-        context=McpErrorContext(
-            "get_disease", arguments={"term": "MONDO:9999999"}, response_mode="full"
-        ),
-    )
+async def test_error_meta_carries_unsafe_for_clinical_use_flag() -> None:
+    """Fleet disclaimer standard: the error-path `_meta` also carries
+    `unsafe_for_clinical_use: True` (same guarantee as the success path), at
+    every `response_mode`."""
+    for response_mode in ("minimal", "compact", "standard", "full"):
+        result = await run_mcp_tool(
+            "get_disease",
+            _raiser(NotFoundError("No matching Mondo record found.")),
+            context=McpErrorContext(
+                "get_disease",
+                arguments={"term": "MONDO:9999999"},
+                response_mode=response_mode,
+            ),
+        )
 
-    assert result["success"] is False
-    assert "unsafe_for_clinical_use" not in result["_meta"]
+        assert result["success"] is False
+        assert result["_meta"]["unsafe_for_clinical_use"] is True
