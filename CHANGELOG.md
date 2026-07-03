@@ -148,6 +148,27 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   closest search hits as `candidates` and chains `_meta.next_commands` straight to
   `get_disease` on the top hit, instead of merely routing back to the search tool.
 
+## [0.1.2] - 2026-07-03
+
+### Fixed
+
+- **MCP `serverInfo.version` now advertises the package version, not FastMCP's.**
+  `create_mondo_mcp()` built its `FastMCP(...)` instance without a `version=`
+  argument, so the MCP `initialize` handshake reported the FastMCP framework
+  version (e.g. `3.4.2`) as the server version. It now passes
+  `version=__version__`, so `serverInfo.version` matches the `mondo-link`
+  package version and the existing `/health` endpoint.
+
+### Changed
+
+- **Single-source versioning.** `mondo_link.__version__` is now derived from the
+  installed package metadata (`importlib.metadata.version("mondo-link")`) instead
+  of a hardcoded literal that had drifted to `0.1.0`. `pyproject.toml`
+  `[project].version` is now the sole source of truth; a new guard test
+  (`tests/unit/test_version_single_source.py`) asserts that the pyproject
+  version, installed metadata, `__version__`, and `create_mondo_mcp().version`
+  are all one value, preventing future drift.
+
 ## [0.1.0] - 2026-06-16
 
 ### Added
