@@ -52,10 +52,10 @@ def default_error_next_commands(
     if tool in (
         "resolve_disease",
         "get_disease",
-        "get_ancestors",
-        "get_descendants",
-        "get_parents",
-        "get_children",
+        "get_disease_ancestors",
+        "get_disease_descendants",
+        "get_disease_parents",
+        "get_disease_children",
         "map_cross_ontology",
     ):
         value = str(arguments.get("term", "") or arguments.get("query", ""))

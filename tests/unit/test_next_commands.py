@@ -168,3 +168,20 @@ def test_withdrawn_recovery() -> None:
         "get_disease", term="MONDO:2"
     )
     _assert_steps(nc.withdrawn_recovery([]))
+
+
+def test_hierarchy_tool_error_recovery_uses_registered_names() -> None:
+    # Regression: default_error_next_commands listed the bare service-method names
+    # (get_ancestors/...) instead of the registered tool names (get_disease_*), so an
+    # error from a hierarchy tool fell through to the generic get_server_capabilities
+    # step instead of the xref/search recovery. An xref-looking term must route to
+    # resolve_xref (its source is inferable) for every hierarchy tool.
+    for tool in (
+        "get_disease_ancestors",
+        "get_disease_descendants",
+        "get_disease_parents",
+        "get_disease_children",
+    ):
+        steps = nc.default_error_next_commands(tool, "not_found", {"term": "OMIM:182212"})
+        _assert_steps(steps)
+        assert steps[0]["tool"] == "resolve_xref", (tool, steps)
