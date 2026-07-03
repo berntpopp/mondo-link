@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-call clinical-use disclaimer (`_meta.unsafe_for_clinical_use`):** every
+  MCP tool response now carries `"unsafe_for_clinical_use": true` in `_meta`,
+  on both the success and error envelope paths, at every `response_mode`
+  (`minimal` included, which otherwise strips `_meta` down to `{tool,
+  request_id}`). Previously the research-use / not-clinical-decision-support
+  notice was surfaced only once via `get_server_capabilities`
+  (`research_use_only` / `research_use_notice`, still present and unchanged);
+  this fleet-wide disclaimer standardization makes the notice visible on the
+  response an LLM client actually reads, per call. Purely additive: no
+  existing `_meta` key is renamed, removed, or restructured.
+
 ### Security
 
 - Adopt the GeneFoundry Container & Deployment Hardening Standard v1: digest-pinned

@@ -67,11 +67,13 @@ async def test_success_meta_tiers_by_response_mode() -> None:
     )
     assert isinstance(std["_meta"]["elapsed_ms"], int)
 
-    # minimal: only the trace essentials (caller explicitly opted out of guidance).
+    # minimal: only the trace essentials plus the untiered disclaimer (caller
+    # explicitly opted out of guidance, but not out of the clinical-use notice).
     minimal = await run_mcp_tool(
         "get_disease", call, context=McpErrorContext("get_disease", response_mode="minimal")
     )
-    assert set(minimal["_meta"]) == {"tool", "request_id"}
+    assert set(minimal["_meta"]) == {"tool", "request_id", "unsafe_for_clinical_use"}
+    assert minimal["_meta"]["unsafe_for_clinical_use"] is True
 
 
 # --- envelope: full 7-code taxonomy ----------------------------------------
