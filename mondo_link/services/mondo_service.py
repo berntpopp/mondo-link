@@ -72,7 +72,10 @@ class MondoService:
         meta = self._repo.read_meta()
         return {
             "index_built": True,
-            "db_path": str(self._repo._path),
+            # Filename only — never the absolute path. This surface is
+            # unauthenticated by design; the full on-disk path would leak the
+            # deployment's filesystem layout to any caller.
+            "db_path": self._repo._path.name,
             "mondo_version": meta.get("mondo_version") if meta else None,
             "schema_version": meta.get("schema_version") if meta else None,
             "build_utc": meta.get("build_utc") if meta else None,
