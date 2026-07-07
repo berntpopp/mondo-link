@@ -346,7 +346,11 @@ def test_diagnostics_with_repo(service: MondoService) -> None:
     assert diag["index_built"] is True
     assert diag["mondo_version"] == "2026-06-01"
     assert diag["counts"]["terms"] == 6
+    # Redacted: report only the db filename, never the full on-disk path (which
+    # would leak the deployment's filesystem layout over the unauth'd surface).
     assert diag["db_path"]
+    assert "/" not in diag["db_path"] and "\\" not in diag["db_path"]
+    assert diag["db_path"] == "mondo.sqlite"
 
 
 def test_diagnostics_without_repo_never_raises() -> None:

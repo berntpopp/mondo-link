@@ -22,6 +22,21 @@ if TYPE_CHECKING:
     from collections.abc import AsyncGenerator
 
 
+def _validate_cors(origins: list[str], *, allow_credentials: bool) -> None:
+    """Fail closed on the credentialed-CORS-with-wildcard-origin footgun.
+
+    mondo-link is unauthenticated by design and holds no cookies/session, so
+    credentialed CORS is meaningless; combining it with a wildcard ``*`` origin
+    is also forbidden by the CORS spec. Refuse to start rather than serve it.
+    """
+    if allow_credentials and "*" in origins:
+        raise RuntimeError(
+            "Refusing to start: allow_credentials=True with a wildcard '*' CORS "
+            "origin is unsafe and forbidden by the CORS spec. mondo-link is "
+            "unauthenticated by design (no cookies/session); leave credentials off."
+        )
+
+
 @asynccontextmanager
 async def lifespan(_app: FastAPI) -> AsyncGenerator[None, None]:
     """Bootstrap the Mondo index and (optionally) start the refresh scheduler."""
@@ -48,10 +63,15 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    # Unauthenticated backend: no cookies/session, so credentialed CORS is
+    # meaningless (and a footgun with wildcard origins). Keep it off; preserve
+    # the GET/POST/OPTIONS method list (serves GET /health and root).
+    allow_credentials = False
+    _validate_cors(settings.cors_origins, allow_credentials=allow_credentials)
     app.add_middleware(
         CORSMiddleware,
         allow_origins=settings.cors_origins,
-        allow_credentials=True,
+        allow_credentials=allow_credentials,
         allow_methods=["GET", "POST", "OPTIONS"],
         allow_headers=["*"],
     )
