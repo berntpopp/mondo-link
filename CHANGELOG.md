@@ -6,6 +6,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-07
+
 ### Added
 
 - **Per-call clinical-use disclaimer (`_meta.unsafe_for_clinical_use`):** every
@@ -27,6 +29,16 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   base compose, a new expose-only `docker-compose.prod.yml`, and a CI container
   scan + SBOM workflow (Trivy). Also fetch the Mondo OBO release over `https://`
   (scheme only; no checksum infra changes).
+- **Inbound-boundary hardening:** the base `docker-compose.yml` now loopback-binds
+  the published host port (`127.0.0.1:…`) so copying it to a server never publishes
+  the unauthenticated backend on the public IP (production still fronts it via the
+  prod/npm overlays, `ports: !reset []`). Credentialed CORS is disabled
+  (`allow_credentials=False`) — mondo-link holds no cookies/session, so it was
+  meaningless — and the app now fails closed at startup on the
+  `allow_credentials=True` + wildcard-origin footgun. The unauthenticated
+  diagnostics surface and the data-refresh logs now report the db **filename**
+  only, never the absolute on-disk path (no filesystem-layout leak). Both compose
+  and CORS guards are locked by new unit tests.
 
 ### Token-efficiency pass
 
