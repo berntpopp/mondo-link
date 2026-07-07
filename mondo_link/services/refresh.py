@@ -47,7 +47,9 @@ async def bootstrap_data(config: MondoDataConfig, logger: Any) -> None:
     try:
         path = await asyncio.to_thread(ensure_database, _as_settings(config))
         reset_mondo_service()
-        logger.info("mondo_data_ready", db_path=str(path))
+        # Log the filename only — never the absolute path (avoids leaking the
+        # deployment's filesystem layout into logs).
+        logger.info("mondo_data_ready", db_file=path.name)
     except (MondoError, DownloadError, OSError) as exc:
         logger.warning("mondo_data_bootstrap_failed", error=str(exc))
 
