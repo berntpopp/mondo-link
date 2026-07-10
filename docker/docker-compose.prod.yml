@@ -12,13 +12,16 @@ services:
     environment:
       MONDO_LINK_LOG_LEVEL: INFO
       MONDO_LINK_LOG_FORMAT: json
+      # Override with the exact production hostname when it differs from NPM.
+      MONDO_LINK_ALLOWED_HOSTS: '["localhost","127.0.0.1","::1","mondo-link.genefoundry.org"]'
     ports: !reset []
     expose:
       - "8000"
     read_only: true
     tmpfs:
       - /tmp/mondo-link:rw,noexec,nosuid,size=512m,mode=1777
-    security_opt:
+    # Replace the base list instead of merging a duplicate value, which Compose rejects.
+    security_opt: !override
       - no-new-privileges:true
     cap_drop:
       - ALL
