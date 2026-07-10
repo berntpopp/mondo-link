@@ -47,6 +47,11 @@ make dev            # unified REST + MCP server on http://127.0.0.1:8000
 curl -s http://127.0.0.1:8000/health
 ```
 
+HTTP deployments enforce exact Host and Origin allowlists. Configure
+`MONDO_LINK_ALLOWED_HOSTS` as a JSON list containing the public reverse-proxy
+hostname in addition to loopback defaults; `MONDO_LINK_ALLOWED_ORIGINS` defaults
+to `[]`, which permits requests without an `Origin` header.
+
 ## MCP client setup
 
 HTTP (unified server exposes `/mcp` alongside `/health`):

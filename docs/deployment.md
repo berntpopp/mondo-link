@@ -28,6 +28,8 @@ data settings use a `__` delimiter (`pydantic-settings`).
 | `MONDO_LINK_PORT` | `8000` | Bind port. |
 | `MONDO_LINK_TRANSPORT` | `unified` | `unified` \| `http` \| `stdio`. |
 | `MONDO_LINK_MCP_PATH` | `/mcp` | MCP mount path (must start with `/`). |
+| `MONDO_LINK_ALLOWED_HOSTS` | loopback hosts | JSON list of exact accepted Host values; add the public proxy hostname. Wildcards are rejected. |
+| `MONDO_LINK_ALLOWED_ORIGINS` | `[]` | JSON list of accepted browser Origins; requests without Origin remain allowed. |
 | `MONDO_LINK_CORS_ORIGINS` | localhost dev origins | JSON list. |
 | `MONDO_LINK_LOG_LEVEL` | `INFO` | `DEBUG`…`CRITICAL`. |
 | `MONDO_LINK_LOG_FORMAT` | `console` | `console` \| `json` (logs go to stderr). |
@@ -63,3 +65,4 @@ and counts — use it as a readiness/freshness check.
 
 `GET /health` returns `{"status": "ok", "service": "mondo-link", ...build}`. The
 build provenance (version, git SHA) is included for deploy verification.
+Container healthchecks send `Host: localhost`, which is included in the default exact allowlist.

@@ -12,9 +12,10 @@ from mondo_link.app import create_app
 
 
 def test_unified_server_builds_stateless_json_mcp_app() -> None:
-    src = inspect.getsource(server_manager.UnifiedServerManager.start_unified_server)
+    src = inspect.getsource(server_manager.create_unified_app)
     assert "stateless_http=True" in src, "MCP app must be built stateless"
     assert "json_response=True" in src, "MCP app must return JSON responses"
+    assert "host_origin_protection=True" in src, "MCP app must use the native strict guard"
     assert 'mount("/"' in src, "MCP ASGI app must mount at root (no 307)"
 
 
