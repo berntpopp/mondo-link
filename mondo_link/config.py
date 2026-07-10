@@ -59,6 +59,22 @@ class MondoDataConfig(BaseModel):
         le=1800,
         description="HTTP timeout (seconds) for downloading a Mondo release file.",
     )
+    max_download_bytes: int = Field(
+        default=1 << 30,
+        gt=0,
+        description=(
+            "Maximum release artifact size; measured below 512 MiB on 2026-07-10. "
+            "Override for a larger approved Mondo release."
+        ),
+    )
+    max_download_seconds: float = Field(
+        default=1800.0,
+        gt=0,
+        description=(
+            "Maximum total release transfer time; measured below 900 seconds on 2026-07-10. "
+            "Override for slower approved links."
+        ),
+    )
     user_agent: str = Field(
         default=f"mondo-link/{__version__} (+https://github.com/berntpopp/mondo-link)",
         description="User-Agent sent to the Monarch PURLs.",
