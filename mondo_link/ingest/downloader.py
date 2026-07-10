@@ -18,6 +18,11 @@ from typing import TYPE_CHECKING
 import httpx
 
 from mondo_link.exceptions import DownloadError
+from mondo_link.ingest.download_security import (
+    DownloadPolicy,
+    open_validated_stream,
+    stream_atomic,
+)
 
 if TYPE_CHECKING:
     from mondo_link.config import ServerSettings
@@ -33,6 +38,10 @@ OPTIONAL_KEYS: frozenset[str] = frozenset({"sssom"})
 
 CACHE_FILENAME = "download_cache.json"
 _CHUNK_SIZE = 1 << 16
+MONDO_OBO_HOSTS = frozenset(
+    {"purl.obolibrary.org", "github.com", "release-assets.githubusercontent.com"}
+)
+MONDO_SSSOM_HOSTS = frozenset({"raw.githubusercontent.com"})
 
 
 @dataclass
@@ -109,10 +118,13 @@ def _int_or_none(value: str | None) -> int | None:
         return None
 
 
-def _stream_to_file(response: httpx.Response, path: Path) -> None:
-    with path.open("wb") as handle:
-        for chunk in response.iter_bytes(_CHUNK_SIZE):
-            handle.write(chunk)
+def _policy_for(config: ServerSettings, key: str) -> DownloadPolicy:
+    hosts = MONDO_OBO_HOSTS if key == "obo" else MONDO_SSSOM_HOSTS
+    return DownloadPolicy(
+        allowed_hosts=hosts,
+        max_bytes=config.data.max_download_bytes,
+        max_seconds=config.data.max_download_seconds,
+    )
 
 
 def download_file(
@@ -140,8 +152,13 @@ def download_file(
 
     try:
         with (
-            httpx.Client(follow_redirects=True, timeout=config.data.download_timeout) as client,
-            client.stream("GET", url, headers=headers) as response,
+            httpx.Client(follow_redirects=False, timeout=config.data.download_timeout) as client,
+            open_validated_stream(
+                client,
+                url,
+                headers=headers,
+                policy=_policy_for(config, key),
+            ) as response,
         ):
             if response.status_code == httpx.codes.NOT_MODIFIED:
                 return DownloadResult(
@@ -155,7 +172,13 @@ def download_file(
             etag = response.headers.get("ETag")
             last_modified = response.headers.get("Last-Modified")
             content_length = _int_or_none(response.headers.get("Content-Length"))
-            _stream_to_file(response, dest)
+            stream_atomic(
+                response,
+                dest,
+                max_bytes=config.data.max_download_bytes,
+                max_seconds=config.data.max_download_seconds,
+                chunk_size=_CHUNK_SIZE,
+            )
     except httpx.HTTPStatusError as exc:
         raise DownloadError(
             f"GET {url} failed: {exc.response.status_code}",
