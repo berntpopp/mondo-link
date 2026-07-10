@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-10
+
+### Security
+
+- Harden Mondo release acquisition with exact-host validated redirects,
+  source-specific policies, configurable size and time limits, and atomic
+  replacement that preserves the previous valid artifact on failure.
+
 ## [0.1.3] - 2026-07-07
 
 ### Added
