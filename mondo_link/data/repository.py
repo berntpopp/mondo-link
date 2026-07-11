@@ -36,9 +36,13 @@ class MondoRepository:
     def __init__(self, db_path: Path | str) -> None:
         """Open a read-only connection to the Mondo database."""
         self._path = Path(db_path)
+        # SEVER: never embed the absolute DB path or the raw sqlite error text in
+        # the exception message -- both are surfaced verbatim by the data_unavailable
+        # envelope and by log sinks. The path/sqlite detail stays only in the chained
+        # cause (server-side); the caller gets a fixed, path-free message.
         if not self._path.exists():
             raise DataUnavailableError(
-                f"Mondo database not found at {self._path}. Build it with `mondo-link-data build`."
+                "The Mondo database file is missing. Build it with `mondo-link-data build`."
             )
         try:
             self._conn = sqlite3.connect(
@@ -47,9 +51,7 @@ class MondoRepository:
                 check_same_thread=False,
             )
         except sqlite3.Error as exc:  # pragma: no cover - rare OS-level failure
-            raise DataUnavailableError(
-                f"Cannot open Mondo database at {self._path}: {exc}."
-            ) from exc
+            raise DataUnavailableError("The Mondo database could not be opened.") from exc
         self._conn.row_factory = sqlite3.Row
         self._xref_label_col: bool | None = None
 
@@ -99,9 +101,7 @@ class MondoRepository:
         try:
             row = self._conn.execute("SELECT * FROM meta WHERE id = 1").fetchone()
         except sqlite3.Error as exc:
-            raise DataUnavailableError(
-                f"Mondo database at {self._path} is unreadable: {exc}."
-            ) from exc
+            raise DataUnavailableError("The Mondo database could not be read.") from exc
         return dict(row) if row is not None else {}
 
     # -- term records ----------------------------------------------------------

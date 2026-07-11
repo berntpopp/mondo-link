@@ -128,8 +128,10 @@ async def test_error_envelope_is_a_flat_dict_never_a_nested_error_object() -> No
     assert result["success"] is False
     assert "error" not in result  # never a nested error object
     assert result["error_code"] == "not_found"
-    # NotFoundError.__str__ prefixes the HTTP-style status code it carries.
-    assert result["message"] == "[404] No matching Mondo record found."
+    # The public message is a FIXED, error-code-specific string: the exception's
+    # own text (which can embed the caller's query/identifier) is never
+    # interpolated into a caller-visible message.
+    assert result["message"] == "No matching Mondo record was found for the request."
     assert result["retryable"] is False
     assert result["recovery_action"] == "reformulate_input"
     assert isinstance(result["_meta"], dict)
