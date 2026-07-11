@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING, Any
 
 from mondo_link.exceptions import InvalidInputError, NotFoundError
 from mondo_link.identifiers import normalize_xref
+from mondo_link.mcp.untrusted_content import (
+    UntrustedText,
+    enforce_untrusted_text_limits,
+    fence_untrusted_text,
+)
 from mondo_link.services.pagination import page_fields
 from mondo_link.services.resolution import Resolver
 from mondo_link.services.shaping import (
@@ -27,12 +32,65 @@ if TYPE_CHECKING:
 
 _MAX_LIMIT = 1000
 
+#: search_diseases' own hard pagination cap (mirrors the tool's ``limit``
+#: Field constraint in ``mcp/tools/diseases.py``). Passed as the
+#: ``enforce_untrusted_text_limits`` ``max_objects`` override so a legitimate
+#: wide search is never rejected by the v1.1 fencing ceiling: the fleet
+#: default (128) is a generic backstop, not a bespoke per-tool pagination
+#: bound, and this tool's own cap was already reviewed and is unrelated to
+#: the v1.1 object-count guard's intent (bounding pathological/abusive
+#: payload sizes, not a normal max-page result set).
+_SEARCH_MAX_OBJECTS = 200
+
+#: Response-Envelope Standard v1.1: upstream Mondo prose (the free-text
+#: ``definition``) is fenced as a typed ``untrusted_text`` object at this
+#: serialization boundary, never left as a bare string. ``source`` is fixed
+#: fleet-wide for this backend; ``record_id`` is the term's MONDO id.
+_UNTRUSTED_SOURCE = "mondo"
+
 
 def _finalize_xref_entry(entry: dict[str, Any]) -> dict[str, Any]:
     """Drop the ``predicates`` list when a target id has a single predicate (token-lean)."""
     if len(entry["predicates"]) <= 1:
         del entry["predicates"]
     return entry
+
+
+def _fence_definition(
+    raw: str | None, *, mondo_id: str, sink: list[UntrustedText]
+) -> dict[str, Any] | None:
+    """Fence an upstream Mondo definition as a v1.1 ``untrusted_text`` object.
+
+    Returns ``None`` when there is no definition, preserving the existing
+    null-when-absent contract ``shape_disease``/``shape_search_hit`` rely on
+    to drop the field in compact mode. Every non-null fence is appended to
+    ``sink`` so the caller can enforce the response-wide limits once.
+    """
+    if not raw:
+        return None
+    fenced = fence_untrusted_text(raw, source=_UNTRUSTED_SOURCE, record_id=mondo_id)
+    sink.append(fenced)
+    return fenced.model_dump(mode="json")
+
+
+def _fence_search_hit(hit: dict[str, Any], mode: str, sink: list[UntrustedText]) -> dict[str, Any]:
+    """Project one search hit, then fence its definition/definition_snippet.
+
+    :func:`shape_search_hit` emits the full paragraph as ``definition`` in
+    standard/full mode, or its word-boundary truncation as
+    ``definition_snippet`` in compact mode -- both carry the SAME upstream
+    prose, so both are fenced. Leaving ``definition_snippet`` unfenced would
+    ship raw upstream text on the default (compact) hot path.
+    """
+    shaped = shape_search_hit(hit, mode)
+    mondo_id = str(hit.get("mondo_id"))
+    for key in ("definition", "definition_snippet"):
+        value = shaped.get(key)
+        if value:
+            fenced = fence_untrusted_text(str(value), source=_UNTRUSTED_SOURCE, record_id=mondo_id)
+            sink.append(fenced)
+            shaped[key] = fenced.model_dump(mode="json")
+    return shaped
 
 
 class MondoService:
@@ -124,12 +182,14 @@ class MondoService:
         raw = (query or "").strip()
         if not raw:
             raise InvalidInputError("query must be a non-empty search string.", field="query")
-        limit = max(1, min(limit, 200))
+        limit = max(1, min(limit, _SEARCH_MAX_OBJECTS))
         offset = max(0, offset)
         hits, total = self.repo.search(
             raw, limit=limit, offset=offset, include_obsolete=include_obsolete
         )
-        results = [shape_search_hit(hit, response_mode) for hit in hits]
+        fenced_objs: list[UntrustedText] = []
+        results = [_fence_search_hit(hit, response_mode, fenced_objs) for hit in hits]
+        enforce_untrusted_text_limits(fenced_objs, max_objects=_SEARCH_MAX_OBJECTS)
         return {
             "query": raw,
             "results": results,
@@ -151,10 +211,13 @@ class MondoService:
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
             raise NotFoundError(f"No Mondo term for {mondo_id}.")
+        fenced_objs: list[UntrustedText] = []
         payload: dict[str, Any] = {
             "mondo_id": mondo_id,
             "name": record["name"],
-            "definition": record["definition"],
+            "definition": _fence_definition(
+                record["definition"], mondo_id=mondo_id, sink=fenced_objs
+            ),
             "synonyms": record["synonyms"],
             "subsets": record["subsets"],
             "obsolete": record["is_obsolete"],
@@ -166,6 +229,7 @@ class MondoService:
             "xrefs": self._grouped_xrefs(mondo_id),
             "mondo_version": self._mondo_version(),
         }
+        enforce_untrusted_text_limits(fenced_objs)
         return select_fields(shape_disease(payload, response_mode), fields)
 
     def _grouped_xrefs(self, mondo_id: str, prefixes: list[str] | None = None) -> dict[str, Any]:

@@ -38,6 +38,31 @@ _ARR = {"type": "array"}
 _ARR_NULL = {"type": ["array", "null"]}
 _OBJ = {"type": "object", "additionalProperties": True}
 
+#: v1.1 typed object for externally sourced free text (Response-Envelope
+#: Standard v1.1): ``{kind, text, provenance: {source, record_id,
+#: retrieved_at}, raw_sha256}``. Declared inline (not via
+#: ``UntrustedText.model_json_schema()``) to keep this module's flat,
+#: ``$ref``-free schema style -- see ``mondo_link.mcp.untrusted_content``.
+_UNTRUSTED_TEXT: dict[str, Any] = {
+    "type": "object",
+    "additionalProperties": True,
+    "properties": {
+        "kind": {"type": "string", "enum": ["untrusted_text"]},
+        "text": _STR,
+        "provenance": {
+            "type": "object",
+            "additionalProperties": True,
+            "properties": {
+                "source": _STR,
+                "record_id": _STR,
+                "retrieved_at": _STR,
+            },
+        },
+        "raw_sha256": _STR,
+    },
+}
+_UNTRUSTED_TEXT_NULL: dict[str, Any] = {**_UNTRUSTED_TEXT, "type": ["object", "null"]}
+
 #: One cross-reference target within a prefix group: ONE entry per object_id. The
 #: primary ``predicate``/``origin`` are the strongest mapping's; ``predicates`` lists
 #: all of them (strongest-first) only when a target is asserted more than once;
@@ -104,8 +129,8 @@ _SEARCH_HIT = {
         "mondo_id": _STR,
         "name": _STR,
         "score": {"type": "number"},
-        "definition": _STR_NULL,
-        "definition_snippet": _STR,
+        "definition": _UNTRUSTED_TEXT_NULL,
+        "definition_snippet": _UNTRUSTED_TEXT,
     },
 }
 
@@ -124,7 +149,7 @@ SEARCH_SCHEMA = _envelope(
 DISEASE_SCHEMA = _envelope(
     mondo_id=_STR,
     name=_STR,
-    definition=_STR_NULL,
+    definition=_UNTRUSTED_TEXT_NULL,
     synonyms=_ARR,
     xrefs=_GROUPED_XREFS,
     parents=_ARR,
