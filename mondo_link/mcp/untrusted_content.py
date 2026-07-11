@@ -58,6 +58,28 @@ def fence_untrusted_text(raw: str, *, source: str, record_id: str) -> UntrustedT
     )
 
 
+#: Length cap for every caller-visible error/diagnostics message (fleet norm).
+MAX_MESSAGE_CHARS = 280
+
+
+def sanitize_message(text: str) -> str:
+    """Strip the fence's forbidden control/zero-width/bidi/NUL code points + length-cap.
+
+    Applied to EVERY caller-visible error/diagnostics/message string so a hostile
+    upstream (or a caller-influenced value echoed into an error frame) can never
+    smuggle control, zero-width, bidirectional, or NUL code points into an error
+    envelope -- in either the ``structured_content`` or the ``TextContent`` JSON
+    mirror. This is a defense-in-depth backstop for *server-authored* strings
+    (fixed guidance text, a caller-supplied identifier echoed in an arg error): it
+    strips code points but NOT prose, so any string whose PROSE is attacker- or
+    upstream-influenced (an upstream response body, ``str(exc)`` of an upstream/DB
+    error, a local filesystem path) must additionally be SEVERED to a fixed
+    server-authored message at its source, never merely passed through here.
+    """
+    clean = "".join(char for char in text if ord(char) not in FORBIDDEN_CODEPOINTS)
+    return clean[:MAX_MESSAGE_CHARS]
+
+
 DEFAULT_MAX_TEXT_BYTES = 2_097_152
 DEFAULT_MAX_OBJECTS = 128
 DEFAULT_MAX_TOTAL_TEXT_BYTES = 8_388_608
