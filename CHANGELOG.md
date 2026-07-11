@@ -6,6 +6,25 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.2] - 2026-07-11
+
+### Security (defense in depth)
+
+- Closed the last FastMCP-core not-found reflection residual. FastMCP core / the
+  MCP SDK reflected the caller's own requested tool name, resource URI, or prompt
+  name -- with any control/zero-width/bidi/NUL code points or injection prose --
+  into log/telemetry sinks (and, for `prompts/get`, into the caller-visible error
+  frame) BEFORE this repo's middleware ran. Added a Layer-3 protocol backstop that
+  severs `Unknown prompt: '<name>'` (and any raw unknown-tool/resource dispatch
+  error) into a fixed, input-free message, and extended the Layer-5 log-scrub
+  filter from the single `fastmcp.server.server` prefix rule to a marker-based
+  filter on every source logger -- root/`mcp.shared.session` (the malformed-URI
+  `-32602`), `mcp.server.lowlevel.server` ("Tool cache miss"),
+  `fastmcp.server.mixins.mcp_operations` ("Handler called"), the `fastmcp` parent,
+  and their non-propagating Rich handlers -- at all levels (DEBUG included).
+  Caller self-reflection surface (low-medium); no success schema or envelope shape
+  changed. Research use only.
+
 ## [0.3.1] - 2026-07-11
 
 ### Security (defense in depth)
