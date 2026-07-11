@@ -235,6 +235,11 @@ _BATCH_ITEM = {
         "mondo_id": _STR_NULL,
         "name": _STR_NULL,
         "match_type": _STR_NULL,
+        # get_disease_batch rows carry the same fenced definition as get_disease;
+        # declare the v1.1 untrusted_text object (kind literal) in the LIST-ITEM
+        # schema, not just top-level, so the typed shape is not hidden by
+        # ``additionalProperties: true``.
+        "definition": _UNTRUSTED_TEXT_NULL,
         "error_code": _STR,
         "message": _STR,
     },

@@ -20,6 +20,10 @@ from mondo_link.mcp.next_commands import after_get_disease_batch, after_resolve_
 from mondo_link.mcp.schemas import BATCH_DISEASE_SCHEMA, BATCH_RESOLVE_SCHEMA
 from mondo_link.mcp.service_adapters import get_mondo_service
 from mondo_link.mcp.tools._common import FieldsArg, ResponseMode
+from mondo_link.mcp.untrusted_content import (
+    UntrustedText,
+    enforce_untrusted_text_limits,
+)
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -106,15 +110,25 @@ def register_batch_tools(mcp: FastMCP) -> None:
             _require_batch(terms, "terms")
             svc = get_mondo_service()
             results: list[dict[str, Any]] = []
+            # Aggregate every fenced definition across ALL rows so the v1.1
+            # ceilings bound the WHOLE batch response (up to MAX_BATCH records),
+            # not just each record in isolation (each get_disease already checks
+            # its own single definition). A breach raises UntrustedTextLimitError
+            # -> a typed invalid_input envelope (never a masked internal_error).
+            fenced: list[UntrustedText] = []
             for term in terms:
                 try:
                     rec = svc.get_disease(term, response_mode=response_mode, fields=fields)
                     results.append({**rec, "term": term, "ok": True})
+                    definition = rec.get("definition")
+                    if isinstance(definition, dict) and definition.get("kind") == "untrusted_text":
+                        fenced.append(UntrustedText.model_validate(definition))
                 except Exception as exc:  # per-item boundary; the call still succeeds
                     code, message = classify_exception(exc)
                     results.append(
                         {"term": term, "ok": False, "error_code": code, "message": message}
                     )
+            enforce_untrusted_text_limits(fenced)
             payload: dict[str, Any] = {"count": len(results), "results": results}
             payload.setdefault("_meta", {})["next_commands"] = after_get_disease_batch(payload)
             return payload

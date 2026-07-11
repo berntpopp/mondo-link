@@ -8,6 +8,7 @@ identity anchors (``mondo_id`` + ``name``).
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 RESPONSE_MODES: list[str] = ["minimal", "compact", "standard", "full"]
@@ -17,6 +18,10 @@ DEFAULT_RESPONSE_MODE = "compact"
 #: broadest-fan-out tool, so its default page must stay token-cheap: identity +
 #: score + a short snippet, with the full definition reserved for standard/full.
 SEARCH_SNIPPET_CHARS = 140
+
+#: Matches a run of whitespace, used to back a truncated snippet off to the
+#: last word boundary WITHOUT collapsing internal whitespace (see :func:`_snippet`).
+_WS_RUN_RE = re.compile(r"\s+")
 
 _PRESERVE_KEYS: frozenset[str] = frozenset({"_meta", "success"})
 
@@ -76,6 +81,18 @@ def shape_hit(hit: dict[str, Any], mode: str) -> dict[str, Any]:
     return {k: v for k, v in hit.items() if not _is_empty(v)}
 
 
+def _is_fenced(value: Any) -> bool:
+    """True for a v1.1 ``untrusted_text`` object (a fenced, OPAQUE leaf).
+
+    A fenced object is ``{kind: "untrusted_text", text, provenance, raw_sha256}``.
+    The field projector must never descend into it: a projection like
+    ``fields=["definition.text"]`` must return the whole wrapper, never the bare
+    ``text`` stripped of ``kind``/``provenance``/``raw_sha256`` (that would defeat
+    the fence). See Response-Envelope Standard v1.1.
+    """
+    return isinstance(value, dict) and value.get("kind") == "untrusted_text"
+
+
 def select_fields(payload: dict[str, Any], fields: list[str] | None) -> dict[str, Any]:
     """Project a payload to a caller-requested sparse fieldset.
 
@@ -84,6 +101,10 @@ def select_fields(payload: dict[str, Any], fields: list[str] | None) -> dict[str
     and ONE level of dotting into a grouped object -- e.g. ``"xrefs.OMIM"`` keeps
     only the OMIM group under ``xrefs``. Unknown fields are skipped (open-world).
     Returns the payload unchanged when ``fields`` is falsy.
+
+    A fenced ``untrusted_text`` object is treated as an OPAQUE leaf: dotting into
+    it (``"definition.text"``) yields the whole wrapper, never the bare ``text``
+    (no fence-bypass via projection).
     """
     if not fields:
         return payload
@@ -92,7 +113,10 @@ def select_fields(payload: dict[str, Any], fields: list[str] | None) -> dict[str
         top, _, sub = field.partition(".")
         if sub:
             container = payload.get(top)
-            if isinstance(container, dict) and sub in container:
+            if _is_fenced(container):
+                # Opaque leaf: never descend into a fenced object; keep the wrapper.
+                out[top] = container
+            elif isinstance(container, dict) and sub in container:
                 nested = out.setdefault(top, {})
                 if isinstance(nested, dict):
                     nested[sub] = container[sub]
@@ -102,13 +126,22 @@ def select_fields(payload: dict[str, Any], fields: list[str] | None) -> dict[str
 
 
 def _snippet(text: str, limit: int) -> str:
-    """Truncate ``text`` to ``limit`` chars on a word boundary (adds ``…``)."""
-    text = " ".join(text.split())  # normalise whitespace runs
+    """Truncate ``text`` to ``limit`` chars on a word boundary (adds ``…``).
+
+    Internal whitespace (tab/LF/CR) is **preserved**, not collapsed: the snippet
+    is fenced as a v1.1 ``untrusted_text`` object at the MCP boundary and its
+    ``raw_sha256`` must cover the snippet's true upstream bytes. Collapsing
+    whitespace first would strip tab/LF/CR the standard requires preserved and
+    make the digest cover rewritten text. Only trailing whitespace at the cut is
+    trimmed before the ellipsis marker.
+    """
     if len(text) <= limit:
         return text
     cut = text[:limit].rstrip()
-    head, _, _ = cut.rpartition(" ")
-    return (head or cut) + "…"
+    matches = list(_WS_RUN_RE.finditer(cut))
+    if matches and matches[-1].start() > 0:
+        cut = cut[: matches[-1].start()]
+    return cut + "…"
 
 
 def shape_search_hit(
