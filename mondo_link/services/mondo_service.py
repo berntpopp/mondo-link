@@ -56,21 +56,30 @@ def _finalize_xref_entry(entry: dict[str, Any]) -> dict[str, Any]:
     return entry
 
 
-def _fence_definition(
-    raw: str | None, *, mondo_id: str, sink: list[UntrustedText]
-) -> dict[str, Any] | None:
+def _fence_definition(raw: str | None, *, mondo_id: str) -> dict[str, Any] | None:
     """Fence an upstream Mondo definition as a v1.1 ``untrusted_text`` object.
 
     Returns ``None`` when there is no definition, preserving the existing
-    null-when-absent contract ``shape_disease``/``shape_search_hit`` rely on
-    to drop the field in compact mode. Every non-null fence is appended to
-    ``sink`` so the caller can enforce the response-wide limits once.
+    null-when-absent contract ``shape_disease``/``shape_search_hit`` rely on to
+    drop the field in compact mode.
     """
     if not raw:
         return None
     fenced = fence_untrusted_text(raw, source=_UNTRUSTED_SOURCE, record_id=mondo_id)
-    sink.append(fenced)
     return fenced.model_dump(mode="json")
+
+
+def _fenced_in(payload: dict[str, Any]) -> list[UntrustedText]:
+    """Reconstruct the fenced objects ACTUALLY present in a final payload.
+
+    Enforcing limits over what the response really emits (not what was built
+    before projection) means ``minimal`` mode or a sparse fieldset that omits
+    ``definition`` never fails on a definition the caller never sees.
+    """
+    value = payload.get("definition")
+    if isinstance(value, dict) and value.get("kind") == "untrusted_text":
+        return [UntrustedText.model_validate(value)]
+    return []
 
 
 def _fence_search_hit(hit: dict[str, Any], mode: str, sink: list[UntrustedText]) -> dict[str, Any]:
@@ -211,13 +220,10 @@ class MondoService:
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
             raise NotFoundError(f"No Mondo term for {mondo_id}.")
-        fenced_objs: list[UntrustedText] = []
         payload: dict[str, Any] = {
             "mondo_id": mondo_id,
             "name": record["name"],
-            "definition": _fence_definition(
-                record["definition"], mondo_id=mondo_id, sink=fenced_objs
-            ),
+            "definition": _fence_definition(record["definition"], mondo_id=mondo_id),
             "synonyms": record["synonyms"],
             "subsets": record["subsets"],
             "obsolete": record["is_obsolete"],
@@ -229,8 +235,12 @@ class MondoService:
             "xrefs": self._grouped_xrefs(mondo_id),
             "mondo_version": self._mondo_version(),
         }
-        enforce_untrusted_text_limits(fenced_objs)
-        return select_fields(shape_disease(payload, response_mode), fields)
+        final = select_fields(shape_disease(payload, response_mode), fields)
+        # Enforce limits over the fenced objects the FINAL response actually
+        # emits: minimal mode / a sparse fieldset may project the definition
+        # away, and a non-emitted definition must never fail the response.
+        enforce_untrusted_text_limits(_fenced_in(final))
+        return final
 
     def _grouped_xrefs(self, mondo_id: str, prefixes: list[str] | None = None) -> dict[str, Any]:
         """Group cross-references by prefix, ONE entry per target id.
