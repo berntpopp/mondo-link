@@ -15,6 +15,7 @@ import json
 import logging
 from typing import Any
 
+from fastmcp.exceptions import ResourceError
 from fastmcp.exceptions import ValidationError as FastMCPValidationError
 from fastmcp.server.middleware.middleware import CallNext, Middleware, MiddlewareContext
 from fastmcp.tools.tool import ToolResult
@@ -179,6 +180,25 @@ class ArgValidationMiddleware(Middleware):
             structured_content=envelope,
             content=[TextContent(type="text", text=json.dumps(envelope))],
         )
+
+    async def on_read_resource(
+        self,
+        context: MiddlewareContext[Any],
+        call_next: CallNext[Any, Any],
+    ) -> Any:
+        """Emit a FIXED, URI-free error for a resource not-found / read failure.
+
+        The requested resource URI is caller-controlled; FastMCP core echoes it
+        (``Unknown resource: '<uri>'`` / ``Error reading resource '<uri>'`` -- with
+        any percent-encoded code points or injection prose) in both the direct
+        ``read_resource`` exception and the protocol ``-32002`` error. Re-raise a
+        fixed ``ResourceError`` so the URI never reaches the caller/protocol.
+        """
+        try:
+            return await call_next(context)
+        except Exception as exc:
+            logger.warning("mcp_resource_error type=%s", type(exc).__name__)
+            raise ResourceError("Resource unavailable or not found.") from None
 
     async def on_call_tool(
         self,

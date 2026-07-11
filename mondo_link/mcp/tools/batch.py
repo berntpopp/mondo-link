@@ -23,7 +23,6 @@ from mondo_link.mcp.tools._common import FieldsArg, ResponseMode
 from mondo_link.mcp.untrusted_content import (
     UntrustedText,
     enforce_untrusted_text_limits,
-    sanitize_message,
 )
 
 if TYPE_CHECKING:
@@ -69,22 +68,18 @@ def register_batch_tools(mcp: FastMCP) -> None:
             _require_batch(queries, "queries")
             svc = get_mondo_service()
             results: list[dict[str, Any]] = []
-            for query in queries:
+            for index, query in enumerate(queries):
                 try:
                     rec = svc.resolve_disease(query, response_mode=response_mode)
                     results.append({**rec, "query": query, "ok": True})
                 except Exception as exc:  # per-item boundary; the call still succeeds
+                    # `message` is a FIXED classified string and `index` (an int)
+                    # correlates the failure to its 1:1-ordered input WITHOUT
+                    # echoing the caller's raw value (which could carry injection
+                    # prose that survives code-point stripping).
                     code, message = classify_exception(exc)
-                    # `message` is a FIXED classified string; the echoed input is
-                    # code-point-stripped so a hostile identifier cannot smuggle
-                    # control/bidi code points into this bypass (success) row.
                     results.append(
-                        {
-                            "query": sanitize_message(query),
-                            "ok": False,
-                            "error_code": code,
-                            "message": message,
-                        }
+                        {"index": index, "ok": False, "error_code": code, "message": message}
                     )
             payload: dict[str, Any] = {"count": len(results), "results": results}
             payload.setdefault("_meta", {})["next_commands"] = after_resolve_batch(payload)
@@ -125,7 +120,7 @@ def register_batch_tools(mcp: FastMCP) -> None:
             # its own single definition). A breach raises UntrustedTextLimitError
             # -> a typed invalid_input envelope (never a masked internal_error).
             fenced: list[UntrustedText] = []
-            for term in terms:
+            for index, term in enumerate(terms):
                 try:
                     rec = svc.get_disease(term, response_mode=response_mode, fields=fields)
                     results.append({**rec, "term": term, "ok": True})
@@ -133,14 +128,11 @@ def register_batch_tools(mcp: FastMCP) -> None:
                     if isinstance(definition, dict) and definition.get("kind") == "untrusted_text":
                         fenced.append(UntrustedText.model_validate(definition))
                 except Exception as exc:  # per-item boundary; the call still succeeds
+                    # `index` (int) correlates the failure to its input without
+                    # echoing the caller's raw value; `message` is FIXED.
                     code, message = classify_exception(exc)
                     results.append(
-                        {
-                            "term": sanitize_message(term),
-                            "ok": False,
-                            "error_code": code,
-                            "message": message,
-                        }
+                        {"index": index, "ok": False, "error_code": code, "message": message}
                     )
             enforce_untrusted_text_limits(fenced)
             payload: dict[str, Any] = {"count": len(results), "results": results}

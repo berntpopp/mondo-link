@@ -9,8 +9,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from mondo_link.identifiers import infer_xref_source, looks_like_mondo_id
-
 
 def cmd(tool: str, **arguments: Any) -> dict[str, Any]:
     """One ready-to-call next step."""
@@ -48,25 +46,14 @@ def _more_steps(
 def default_error_next_commands(
     tool: str, error_code: str, arguments: dict[str, Any]
 ) -> list[dict[str, Any]]:
-    """A sensible recovery step for any error lacking an explicit fallback."""
-    if tool in (
-        "resolve_disease",
-        "get_disease",
-        "get_disease_ancestors",
-        "get_disease_descendants",
-        "get_disease_parents",
-        "get_disease_children",
-        "map_cross_ontology",
-    ):
-        value = str(arguments.get("term", "") or arguments.get("query", ""))
-        source = infer_xref_source(value)
-        if source:
-            return [cmd("resolve_xref", xref_id=value), cmd("search_diseases", query=value)]
-        if value and not looks_like_mondo_id(value):
-            return [cmd("search_diseases", query=value), cmd("get_server_capabilities")]
-    if tool == "resolve_xref":
-        value = str(arguments.get("xref_id", ""))
-        return [cmd("search_diseases", query=value)] if value else [cmd("get_server_capabilities")]
+    """A fixed, argument-free recovery step for an error lacking explicit steps.
+
+    The caller's own input (``term``/``query``/``xref_id``) is NOT echoed into a
+    recovery argument: on the error path that value is unresolved and may carry
+    injection prose, so echoing it into a ``next_commands`` argument would place
+    attacker-influenced text into an executable recovery suggestion. Recovery
+    therefore routes to fixed, argument-free discovery commands only.
+    """
     if error_code == "data_unavailable":
         return [cmd("get_diagnostics")]
     return [cmd("get_server_capabilities")]
