@@ -148,21 +148,30 @@ def test_search_punctuation_safe(service: MondoService) -> None:
 
 
 def test_search_compact_returns_snippet_not_full_definition(service: MondoService) -> None:
-    # Compact (default) is the hot path: identity + score + a short snippet only.
+    # Compact (default) is the hot path: identity + score + a short fenced snippet.
     res = service.search_diseases("huntington", response_mode="compact")
     hit = next(r for r in res["results"] if r["mondo_id"] == HD)
     assert "definition" not in hit  # full paragraph reserved for standard/full
     assert "score" in hit
     if hit.get("definition_snippet"):
-        assert len(hit["definition_snippet"]) <= 141
+        snippet = hit["definition_snippet"]
+        # v1.1 untrusted_text: fenced, not a bare string (Response-Envelope v1.1).
+        assert snippet["kind"] == "untrusted_text"
+        assert len(snippet["text"]) <= 141
+        assert snippet["provenance"]["record_id"] == HD
+        assert snippet["provenance"]["source"] == "mondo"
 
 
 def test_search_standard_returns_full_definition(service: MondoService) -> None:
     res = service.search_diseases("huntington", response_mode="standard")
     hit = next(r for r in res["results"] if r["mondo_id"] == HD)
     assert "definition_snippet" not in hit
-    # the HD fixture term carries a definition, returned in full here
-    assert hit.get("definition")
+    # the HD fixture term carries a definition, fenced as v1.1 untrusted_text.
+    definition = hit["definition"]
+    assert definition["kind"] == "untrusted_text"
+    assert definition["text"] == "A neurodegenerative disorder (CAG repeat)."
+    assert definition["provenance"]["record_id"] == HD
+    assert len(definition["raw_sha256"]) == 64
 
 
 # -- full record --------------------------------------------------------------
@@ -182,6 +191,24 @@ def test_get_disease_grouped_xrefs(service: MondoService) -> None:
     # hierarchy
     assert {p["mondo_id"] for p in rec["parents"]} == {NEURODEGEN, NERVOUS, RARE}
     assert {g["mondo_id"] for g in rec["top_groupings"]} == {NERVOUS, RARE}
+
+
+def test_get_disease_definition_is_fenced(service: MondoService) -> None:
+    # Response-Envelope v1.1: the upstream definition is a typed untrusted_text
+    # object (kind/text/provenance/raw_sha256), never a bare string.
+    rec = service.get_disease("MONDO:0007739", response_mode="full")
+    definition = rec["definition"]
+    assert definition["kind"] == "untrusted_text"
+    assert definition["text"] == "A neurodegenerative disorder (CAG repeat)."
+    assert definition["provenance"]["source"] == "mondo"
+    assert definition["provenance"]["record_id"] == HD
+    assert len(definition["raw_sha256"]) == 64
+
+
+def test_get_disease_no_definition_is_none(service: MondoService) -> None:
+    # A term with no upstream definition stays None (not an empty fenced object).
+    rec = service.get_disease(NERVOUS, response_mode="full")
+    assert rec["definition"] is None
 
 
 def test_get_disease_compact_collapses_synonyms(service: MondoService) -> None:

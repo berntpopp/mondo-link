@@ -6,6 +6,29 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-11
+
+### Changed (BREAKING)
+
+- **Upstream Mondo definitions are now fenced as Response-Envelope Standard
+  v1.1 `untrusted_text` objects.** `get_disease`'s `/definition`,
+  `search_diseases`'s `/results/*/definition` and `/results/*/definition_snippet`,
+  and `get_disease_batch`'s `/results/*/definition` (which reuses `get_disease`)
+  no longer return a bare string: each is now
+  `{kind: "untrusted_text", text, provenance: {source, record_id, retrieved_at},
+  raw_sha256}`. This is defense in depth against prompt injection embedded in
+  upstream ontology prose -- the router already treats a `kind: untrusted_text`
+  subtree as opaque. Clients reading the definition field must switch from
+  `record["definition"]` to `record["definition"]["text"]`. Research use only;
+  not clinical decision support.
+
+### Added
+
+- `mondo_link/mcp/untrusted_content.py`: the v1.1 fencing primitive
+  (`fence_untrusted_text`, `UntrustedText`, `UntrustedTextProvenance`) plus an
+  `enforce_untrusted_text_limits` guard (2 MiB/object, 128 objects, 8 MiB
+  total per response), copied from the fleet's released PubTator reference.
+
 ## [0.2.0] - 2026-07-10
 
 ### Security
