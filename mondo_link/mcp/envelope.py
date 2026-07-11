@@ -29,7 +29,7 @@ from mondo_link.exceptions import (
     WithdrawnEntryError,
 )
 from mondo_link.mcp import metrics
-from mondo_link.mcp.next_commands import cmd, default_error_next_commands, withdrawn_recovery
+from mondo_link.mcp.next_commands import cmd, default_error_next_commands
 from mondo_link.mcp.untrusted_content import UntrustedTextLimitError, sanitize_message
 from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
@@ -112,6 +112,30 @@ _FIXED_MESSAGES: dict[str, str] = {
 #: injection prose, or forbidden code points, so it is safe to surface. Any other
 #: (caller-controlled, unknown) argument name is redacted, never echoed verbatim.
 _SAFE_ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}$")
+
+#: Canonical MONDO id grammar. Caller-visible identifier echoes (candidates,
+#: replaced_by, next_commands arguments) are surfaced ONLY when they match this,
+#: so an upstream/exception label can never smuggle prose through them.
+_MONDO_ID_RE = re.compile(r"^MONDO:\d{7}$")
+#: Closed enum for the withdrawn/obsolete status surfaced on the envelope.
+_WITHDRAWN_STATUSES = frozenset({"obsolete", "deprecated", "merged", "retired"})
+
+
+def _valid_id_entries(entries: Any) -> list[dict[str, str]]:
+    """Project candidate/suggestion/replacement entries to validated ids ONLY.
+
+    Each entry's free-text ``name`` (upstream ontology prose) is dropped; only a
+    grammar-validated ``mondo_id`` survives, so no exception-carried prose reaches
+    a caller-visible structured field. Non-conforming entries are omitted.
+    """
+    out: list[dict[str, str]] = []
+    if not isinstance(entries, list):
+        return out
+    for entry in entries:
+        mondo_id = entry.get("mondo_id") if isinstance(entry, dict) else None
+        if isinstance(mondo_id, str) and _MONDO_ID_RE.match(mondo_id):
+            out.append({"mondo_id": mondo_id})
+    return out
 
 
 def _sanitize_tree(value: Any) -> Any:
@@ -211,41 +235,52 @@ def _build_error_envelope(exc: BaseException, context: McpErrorContext) -> dict[
             "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
         },
     }
+    # Every caller-visible structured field below is built ONLY from a FIXED
+    # string, a CLOSED enum, or a grammar-validated identifier -- an exception's
+    # free-text attributes (field/allowed/hint, candidate names, the caller's
+    # query) are NEVER copied verbatim, because injection prose survives
+    # code-point stripping. `_sanitize_tree` (applied by `_error_envelope`) is a
+    # code-point backstop on top of this structural exclusion, not a substitute.
     if isinstance(exc, InvalidInputError):
-        if exc.field is not None:
-            envelope["field"] = exc.field
-        if exc.allowed is not None:
-            envelope["allowed_values"] = exc.allowed
-        if exc.hint is not None:
-            envelope["hint"] = exc.hint
+        if exc.field is not None and _SAFE_ARG_NAME.match(str(exc.field)):
+            envelope["field"] = str(exc.field)
+        if isinstance(exc.allowed, list):
+            allowed = [a for a in exc.allowed if isinstance(a, str) and _SAFE_ARG_NAME.match(a)]
+            if allowed:
+                envelope["allowed_values"] = allowed
+        # exc.hint is free-form prose and is never surfaced from the exception.
     if isinstance(exc, AmbiguousQueryError) and exc.candidates:
-        envelope["candidates"] = exc.candidates
+        candidates = _valid_id_entries(exc.candidates)
+        if candidates:
+            envelope["candidates"] = candidates
         envelope["_meta"]["next_commands"] = [
-            cmd("get_disease", term=c["mondo_id"]) for c in exc.candidates[:3] if c.get("mondo_id")
+            cmd("get_disease", term=c["mondo_id"]) for c in candidates[:3]
         ] or [cmd("get_server_capabilities")]
         return envelope
     if isinstance(exc, WithdrawnEntryError):
+        replaced_by = _valid_id_entries(exc.replaced_by)
         envelope["obsolete"] = True
-        envelope["withdrawn_status"] = exc.withdrawn_status
-        envelope["replaced_by"] = exc.replaced_by
-        envelope["_meta"]["next_commands"] = withdrawn_recovery(exc.replaced_by)
+        envelope["withdrawn_status"] = (
+            exc.withdrawn_status if exc.withdrawn_status in _WITHDRAWN_STATUSES else "obsolete"
+        )
+        envelope["replaced_by"] = replaced_by
+        envelope["_meta"]["next_commands"] = [
+            cmd("get_disease", term=r["mondo_id"]) for r in replaced_by[:2]
+        ] or [cmd("get_server_capabilities")]
         return envelope
     if isinstance(exc, NotFoundError) and exc.suggestions:
-        envelope["candidates"] = exc.suggestions
-        steps = [
-            cmd("get_disease", term=s["mondo_id"]) for s in exc.suggestions[:3] if s.get("mondo_id")
-        ]
-        query = str(context.arguments.get("term", "") or context.arguments.get("query", ""))
-        if query:
-            steps.append(cmd("search_diseases", query=query))
-        envelope["_meta"]["next_commands"] = steps or [cmd("get_server_capabilities")]
+        candidates = _valid_id_entries(exc.suggestions)
+        if candidates:
+            envelope["candidates"] = candidates
+        envelope["_meta"]["next_commands"] = [
+            cmd("get_disease", term=c["mondo_id"]) for c in candidates[:3]
+        ] or [cmd("get_server_capabilities")]
         return envelope
-    if context.fallback is not None:
-        envelope["_meta"]["next_commands"] = [context.fallback]
-    else:
-        envelope["_meta"]["next_commands"] = default_error_next_commands(
-            context.tool_name, error_code, context.arguments
-        )
+    # No caller value is echoed into recovery steps (prose would survive there);
+    # they resolve to fixed, argument-free discovery commands.
+    envelope["_meta"]["next_commands"] = default_error_next_commands(
+        context.tool_name, error_code, context.arguments
+    )
     return envelope
 
 

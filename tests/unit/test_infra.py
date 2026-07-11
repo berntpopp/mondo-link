@@ -103,12 +103,19 @@ async def test_withdrawn_entry_surfaces_replacement() -> None:
 
 
 async def test_ambiguous_query_surfaces_candidates() -> None:
+    # Candidates are rebuilt to grammar-validated MONDO ids ONLY (no free-text
+    # name copied from the exception); a bad id would be dropped.
     exc = AmbiguousQueryError(
-        "ambiguous", candidates=[{"mondo_id": "MONDO:1"}, {"mondo_id": "MONDO:2"}]
+        "ambiguous",
+        candidates=[
+            {"mondo_id": "MONDO:0000001", "name": "prose"},
+            {"mondo_id": "MONDO:0000002", "name": "prose"},
+        ],
     )
     result = await _run(exc)
     assert result["error_code"] == "ambiguous_query"
     assert len(result["candidates"]) == 2
+    assert result["candidates"][0] == {"mondo_id": "MONDO:0000001"}
     assert result["_meta"]["next_commands"][0]["tool"] == "get_disease"
 
 
@@ -116,9 +123,12 @@ async def test_invalid_input_surfaces_field_and_allowed() -> None:
     exc = InvalidInputError("bad", "query", allowed=["a", "b"], hint="get_disease(term)")
     result = await _run(exc)
     assert result["error_code"] == "invalid_input"
+    # `field` is surfaced only because it is a grammar-valid identifier; the
+    # allowed values are grammar-valid too. `hint` (free-form prose) is NEVER
+    # surfaced from the exception.
     assert result["field"] == "query"
     assert result["allowed_values"] == ["a", "b"]
-    assert result["hint"] == "get_disease(term)"
+    assert "hint" not in result
 
 
 async def test_data_unavailable_is_retryable() -> None:

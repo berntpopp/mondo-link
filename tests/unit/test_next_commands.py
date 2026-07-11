@@ -170,18 +170,20 @@ def test_withdrawn_recovery() -> None:
     _assert_steps(nc.withdrawn_recovery([]))
 
 
-def test_hierarchy_tool_error_recovery_uses_registered_names() -> None:
-    # Regression: default_error_next_commands listed the bare service-method names
-    # (get_ancestors/...) instead of the registered tool names (get_disease_*), so an
-    # error from a hierarchy tool fell through to the generic get_server_capabilities
-    # step instead of the xref/search recovery. An xref-looking term must route to
-    # resolve_xref (its source is inferable) for every hierarchy tool.
+def test_default_error_recovery_never_echoes_caller_input() -> None:
+    # Security: the caller's own input (term/query/xref_id) is NEVER echoed into a
+    # recovery argument on the error path -- an unresolved value may carry
+    # injection prose. Recovery routes to fixed, argument-free discovery commands.
     for tool in (
+        "resolve_disease",
+        "get_disease",
         "get_disease_ancestors",
-        "get_disease_descendants",
-        "get_disease_parents",
-        "get_disease_children",
+        "resolve_xref",
     ):
         steps = nc.default_error_next_commands(tool, "not_found", {"term": "OMIM:182212"})
         _assert_steps(steps)
-        assert steps[0]["tool"] == "resolve_xref", (tool, steps)
+        assert steps == [{"tool": "get_server_capabilities", "arguments": {}}], (tool, steps)
+    # data_unavailable routes to diagnostics (still argument-free)
+    assert nc.default_error_next_commands("get_disease", "data_unavailable", {"term": "x"}) == [
+        {"tool": "get_diagnostics", "arguments": {}}
+    ]
