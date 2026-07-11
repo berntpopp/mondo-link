@@ -51,7 +51,14 @@ async def bootstrap_data(config: MondoDataConfig, logger: Any) -> None:
         # deployment's filesystem layout into logs).
         logger.info("mondo_data_ready", db_file=path.name)
     except (MondoError, DownloadError, OSError) as exc:
-        logger.warning("mondo_data_bootstrap_failed", error=str(exc))
+        # Log only allow-listed metadata (exception class + optional status code),
+        # never str(exc): an OSError/DownloadError message can carry a filesystem
+        # path or URL detail (PII / layout leak).
+        logger.warning(
+            "mondo_data_bootstrap_failed",
+            error_type=type(exc).__name__,
+            status_code=getattr(exc, "status_code", None),
+        )
 
 
 async def _refresh_loop(config: MondoDataConfig, logger: Any) -> None:
@@ -73,7 +80,11 @@ async def _refresh_loop(config: MondoDataConfig, logger: Any) -> None:
             else:
                 logger.debug("mondo_data_unchanged")
         except (MondoError, DownloadError, OSError) as exc:
-            logger.warning("mondo_data_refresh_failed", error=str(exc))
+            logger.warning(
+                "mondo_data_refresh_failed",
+                error_type=type(exc).__name__,
+                status_code=getattr(exc, "status_code", None),
+            )
 
 
 def start_refresh_scheduler(config: MondoDataConfig, logger: Any) -> asyncio.Task[None] | None:

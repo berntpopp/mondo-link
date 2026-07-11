@@ -6,7 +6,11 @@ from fastmcp import FastMCP
 
 from mondo_link import __version__
 from mondo_link.mcp.capabilities import register_capability_resources
-from mondo_link.mcp.middleware import ArgValidationMiddleware, install_validation_log_filter
+from mondo_link.mcp.middleware import (
+    ArgValidationMiddleware,
+    install_span_exception_redactor,
+    install_validation_log_filter,
+)
 from mondo_link.mcp.resources import MONDO_SERVER_INSTRUCTIONS
 from mondo_link.mcp.tools import (
     register_batch_tools,
@@ -20,6 +24,7 @@ from mondo_link.mcp.tools import (
 def create_mondo_mcp() -> FastMCP:
     """Build a FastMCP instance with all mondo-link tools, resources, middleware."""
     install_validation_log_filter()
+    install_span_exception_redactor()
     mcp = FastMCP(
         name="mondo-link",
         version=__version__,

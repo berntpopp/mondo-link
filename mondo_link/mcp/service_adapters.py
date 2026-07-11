@@ -27,9 +27,11 @@ def _build_service() -> MondoService:
         try:
             repo = MondoRepository(db_path)
         except DataUnavailableError as exc:  # pragma: no cover - corrupt db
-            # Filename only — never the absolute path (avoids leaking the
-            # deployment's filesystem layout into logs).
-            logger.warning("mondo_repo_open_failed file=%s err=%s", db_path.name, exc)
+            # Filename + exception CLASS only — never the absolute path or str(exc)
+            # (avoids leaking the deployment's filesystem layout into logs).
+            logger.warning(
+                "mondo_repo_open_failed file=%s err_type=%s", db_path.name, type(exc).__name__
+            )
     return MondoService(repo)
 
 

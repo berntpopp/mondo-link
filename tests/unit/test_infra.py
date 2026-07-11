@@ -25,6 +25,7 @@ from mondo_link.mcp.arg_help import (
     tool_signature,
 )
 from mondo_link.mcp.envelope import (
+    _FIXED_MESSAGES,
     McpErrorContext,
     McpToolError,
     build_arg_error_envelope,
@@ -145,9 +146,14 @@ async def test_internal_error_for_unclassified() -> None:
 
 
 async def test_mcp_tool_error_custom_code() -> None:
+    # The error_code is preserved, but the public message is a FIXED string keyed
+    # on the code -- an arbitrary author/caller-influenced message is not surfaced
+    # (prose is unsafe even code-point-stripped).
     result = await _run(McpToolError(error_code="data_unavailable", message="cold"))
     assert result["error_code"] == "data_unavailable"
-    assert result["message"] == "cold"
+    assert result["message"] != "cold"
+    assert "cold" not in result["message"]
+    assert result["message"] == _FIXED_MESSAGES["data_unavailable"]
 
 
 def test_classify_exception_maps_typed_errors() -> None:

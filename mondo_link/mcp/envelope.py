@@ -93,6 +93,7 @@ def _capabilities_version() -> str | None:
 # detail stays only in the chained exception cause (server-side logs, class name).
 _FIXED_MESSAGES: dict[str, str] = {
     "not_found": "No matching Mondo record was found for the request.",
+    "unknown_tool": "Unknown tool. Call get_server_capabilities to list the valid tools.",
     "obsolete": "The requested Mondo term is obsolete; see replaced_by / candidates.",
     "ambiguous_query": "The query matched multiple Mondo terms; pick one from candidates.",
     "invalid_input": "The request arguments were invalid; check the field and retry.",
@@ -141,7 +142,11 @@ def _classify(exc: BaseException) -> tuple[str, str]:
     it is passed through the code-point backstop only.
     """
     if isinstance(exc, McpToolError):
-        return exc.error_code, sanitize_message(exc.message)
+        # Map the code to a FIXED public message: an arbitrary author-supplied
+        # (or caller-influenced) message is not safe even code-point-stripped.
+        return exc.error_code, _FIXED_MESSAGES.get(
+            exc.error_code, _FIXED_MESSAGES["internal_error"]
+        )
     if isinstance(exc, UntrustedTextLimitError):
         # v1.1 response-limit breach: an explicit, typed limit error -- NOT a
         # masked internal_error. The standard forbids silently omitting fenced
@@ -314,6 +319,36 @@ def build_arg_error_envelope(
                 "allowed_values": valid_params,
                 "hint": signature,
                 "_meta": meta,
+            }
+        ),
+    )
+
+
+def build_unknown_tool_envelope() -> dict[str, Any]:
+    """Fixed, identifier-free error envelope for an unknown tool NAME.
+
+    The requested tool name is caller-controlled; it is NEVER echoed. FastMCP core
+    would otherwise surface it verbatim (``Unknown tool: '<name>'`` -- with any
+    control/zero-width/bidi/NUL code points or injection prose) in an ``isError``
+    result. The middleware returns this BEFORE core dispatch (see the preflight in
+    ``ArgValidationMiddleware.on_call_tool``).
+    """
+    return cast(
+        dict[str, Any],
+        _sanitize_tree(
+            {
+                "success": False,
+                "error_code": "not_found",
+                "message": _FIXED_MESSAGES["unknown_tool"],
+                "retryable": False,
+                "recovery_action": "switch_tool",
+                "field": "tool_name",
+                "_meta": {
+                    "tool": "unknown",
+                    "request_id": _request_id(),
+                    "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
+                    "next_commands": [cmd("get_server_capabilities")],
+                },
             }
         ),
     )

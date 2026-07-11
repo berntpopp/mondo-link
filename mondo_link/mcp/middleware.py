@@ -28,7 +28,7 @@ from mondo_link.mcp.arg_help import (
     normalize_alias_args,
     tool_signature,
 )
-from mondo_link.mcp.envelope import build_arg_error_envelope
+from mondo_link.mcp.envelope import build_arg_error_envelope, build_unknown_tool_envelope
 
 logger = logging.getLogger(__name__)
 
@@ -71,6 +71,74 @@ def install_validation_log_filter() -> None:
     _validation_log_filter_installed = True
 
 
+class _ExceptionSpanRedactor:
+    """Duck-typed OpenTelemetry span processor that strips recorded exception detail.
+
+    FastMCP's ``server_span`` calls ``span.record_exception(exc)`` +
+    ``set_status(Status(ERROR, str(exc)))`` on the tools/call span when a *recording*
+    tracer provider is configured -- and ``str(exc)`` of an argument-validation /
+    unknown-tool error carries the caller-supplied argument NAME/value (with any
+    control/zero-width/bidi/NUL code points or injection prose). This scrubs the
+    ``exception`` event(s) and the ERROR status description before export.
+
+    NB mondo-link ships only ``opentelemetry-api`` (no SDK), so spans are non-recording
+    and this path is inert by default; the guard is defense-in-depth for a deployment
+    that adds ``opentelemetry-sdk`` and a recording provider. Ordering across other
+    processors is best-effort (a synchronous exporter registered *before* this
+    redactor may export first); it is reliable with the batch processor.
+    """
+
+    def on_start(self, span: Any, parent_context: Any = None) -> None:
+        """No-op: redaction happens on span end."""
+        return None
+
+    def on_end(self, span: Any) -> None:
+        """Strip recorded exception events + ERROR status description from a span."""
+        events = getattr(span, "_events", None)
+        if events:
+            kept = [ev for ev in events if getattr(ev, "name", "") != "exception"]
+            if len(kept) != len(events):
+                span._events = kept if isinstance(events, list) else type(events)(kept)
+        status = getattr(span, "_status", None)
+        if status is not None and getattr(status, "description", None):
+            from opentelemetry.trace import Status
+
+            span._status = Status(status.status_code)
+
+    def shutdown(self) -> None:
+        """No-op: the redactor holds no resources."""
+        return None
+
+    def force_flush(self, timeout_millis: int = 30_000) -> bool:
+        """No buffered spans to flush."""
+        return True
+
+
+_span_redactor_installed = False
+
+
+def install_span_exception_redactor() -> None:
+    """Idempotently attach the span-exception redactor to the active tracer provider.
+
+    No-op when no *recording* SDK provider is configured (the default, since mondo
+    depends only on ``opentelemetry-api``): the API's provider has no
+    ``add_span_processor``.
+    """
+    global _span_redactor_installed
+    if _span_redactor_installed:
+        return
+    try:
+        from opentelemetry import trace as _otel_trace
+
+        provider = _otel_trace.get_tracer_provider()
+        add = getattr(provider, "add_span_processor", None)
+        if callable(add):
+            add(_ExceptionSpanRedactor())
+    except Exception:  # pragma: no cover - telemetry guard must never break startup
+        return
+    _span_redactor_installed = True
+
+
 class ArgValidationMiddleware(Middleware):
     """Reshape argument-binding errors into the envelope and apply argument aliases."""
 
@@ -87,6 +155,31 @@ class ArgValidationMiddleware(Middleware):
             self._schema_cache[name] = dict(getattr(tool, "parameters", None) or {})
         return self._schema_cache[name]
 
+    async def _is_registered(self, context: MiddlewareContext[Any], name: str) -> bool:
+        """True if ``name`` is a registered tool (used to preflight unknown names).
+
+        ``get_tool`` returns ``None`` (it does not raise) for an unknown or disabled
+        tool, so an unknown name is caught by the ``is not None`` check.
+        """
+        if name in self._schema_cache:
+            return True
+        fctx = context.fastmcp_context
+        if fctx is None:
+            return False
+        try:
+            tool = await fctx.fastmcp.get_tool(name)
+        except Exception:
+            return False
+        return tool is not None
+
+    @staticmethod
+    def _unknown_tool_result() -> ToolResult:
+        envelope = build_unknown_tool_envelope()
+        return ToolResult(
+            structured_content=envelope,
+            content=[TextContent(type="text", text=json.dumps(envelope))],
+        )
+
     async def on_call_tool(
         self,
         context: MiddlewareContext[CallToolRequestParams],
@@ -94,9 +187,15 @@ class ArgValidationMiddleware(Middleware):
     ) -> ToolResult:
         """Normalize aliases, then convert binding errors into the envelope."""
         name = context.message.name
+        # Preflight the tool NAME. An unknown name is caller-controlled; FastMCP
+        # core would raise `Unknown tool: '<name>'` (echoing it, with any code
+        # points / prose, into an isError TextContent) BEFORE our envelope. Return
+        # a fixed, name-free error before core dispatch so the name never escapes.
+        if context.fastmcp_context is not None and not await self._is_registered(context, name):
+            return self._unknown_tool_result()
         try:
             schema = await self._schema(context, name)
-        except Exception:  # registry miss: let core handle the call untouched
+        except Exception:  # registry miss with no context to preflight: defer to core
             return await call_next(context)
 
         valid = list(schema.get("properties", {}).keys())
