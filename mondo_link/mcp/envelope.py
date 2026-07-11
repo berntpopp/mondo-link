@@ -29,6 +29,7 @@ from mondo_link.exceptions import (
 )
 from mondo_link.mcp import metrics
 from mondo_link.mcp.next_commands import cmd, default_error_next_commands, withdrawn_recovery
+from mondo_link.mcp.untrusted_content import UntrustedTextLimitError
 from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
 logger = logging.getLogger(__name__)
@@ -90,6 +91,12 @@ def _classify(exc: BaseException) -> tuple[str, str]:
     """Return ``(error_code, client_safe_message)`` for an exception."""
     if isinstance(exc, McpToolError):
         return exc.error_code, exc.message
+    if isinstance(exc, UntrustedTextLimitError):
+        # v1.1 response-limit breach: an explicit, typed limit error -- NOT a
+        # masked internal_error. The standard forbids silently omitting fenced
+        # content over a ceiling, so the whole response fails loudly and the
+        # caller can retry with a narrower request (smaller limit / minimal mode).
+        return "invalid_input", "Response exceeded the untrusted-text size/count limit."
     if isinstance(exc, NotFoundError):  # WithdrawnEntryError subclasses this
         return "not_found", _safe_message(exc)
     if isinstance(exc, AmbiguousQueryError):

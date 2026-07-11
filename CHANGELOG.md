@@ -29,6 +29,24 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `enforce_untrusted_text_limits` guard (2 MiB/object, 128 objects, 8 MiB
   total per response), copied from the fleet's released PubTator reference.
 
+### Security (defense-in-depth hardening)
+
+- **No fence-bypass via sparse fieldset.** The `fields=` projector
+  (`select_fields`) now treats a fenced `untrusted_text` object as an opaque
+  leaf: `fields=["definition.text"]` returns the whole typed wrapper, never the
+  bare `text` stripped of `kind`/`provenance`/`raw_sha256`.
+- **Snippet digest over true raw bytes.** The compact `definition_snippet` is
+  truncated from the RAW definition preserving internal tab/LF/CR (no
+  whitespace collapse before fencing), so its `raw_sha256` covers the snippet's
+  real pre-normalization bytes.
+- **Whole-response limit enforcement in `get_disease_batch`.** Every fenced
+  definition across all batch rows is aggregated into one
+  `enforce_untrusted_text_limits` call; a breach surfaces as a typed
+  `invalid_input` error (never a masked `internal_error`).
+- **List-item schema declares the literal.** The `get_disease_batch` item
+  schema now declares `definition` as the `untrusted_text` object (`kind`
+  literal), not hidden behind `additionalProperties`.
+
 ## [0.2.0] - 2026-07-10
 
 ### Security

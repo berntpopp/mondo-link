@@ -168,3 +168,49 @@ def test_select_fields_dotted_keeps_only_subgroup() -> None:
 def test_select_fields_unknown_field_is_skipped() -> None:
     out = shaping.select_fields(_disease(), ["nope", "xrefs.NOTAPREFIX"])
     assert set(out) == {"mondo_id", "name", "mondo_version"}
+
+
+def _fenced_definition() -> dict:
+    return {
+        "kind": "untrusted_text",
+        "text": "A neurodegenerative disorder.",
+        "provenance": {
+            "source": "mondo",
+            "record_id": "MONDO:0007739",
+            "retrieved_at": "2026-07-11T00:00:00+00:00",
+        },
+        "raw_sha256": "0" * 64,
+    }
+
+
+def test_select_fields_treats_fenced_object_as_opaque_leaf() -> None:
+    # A projection dotting into a fenced untrusted_text object must NOT strip
+    # the wrapper (kind/provenance/raw_sha256) -- no fence-bypass via fields=.
+    fenced = _fenced_definition()
+    rec = {
+        "mondo_id": "MONDO:0007739",
+        "name": "Huntington disease",
+        "mondo_version": "2026-06-01",
+        "definition": fenced,
+    }
+    out = shaping.select_fields(rec, ["definition.text"])
+    assert out["definition"] == fenced
+    assert out["definition"]["kind"] == "untrusted_text"
+    assert "raw_sha256" in out["definition"]
+
+
+def test_snippet_preserves_internal_whitespace_when_under_limit() -> None:
+    # The compact snippet is fenced downstream; its raw bytes (tab/LF/CR) must
+    # survive, so _snippet never collapses internal whitespace.
+    raw = "alpha\tbeta\ngamma delta"
+    out = shaping._snippet(raw, 100)  # under the limit -> unchanged
+    assert out == raw
+    assert "\t" in out and "\n" in out
+
+
+def test_snippet_truncates_on_word_boundary_without_collapsing() -> None:
+    raw = "word one\ttwo three four five six seven eight nine ten eleven twelve"
+    out = shaping._snippet(raw, 20)
+    assert out.endswith("…")
+    assert len(out) <= 21
+    assert not out[:-1].endswith(" ")  # trimmed at a whitespace boundary
