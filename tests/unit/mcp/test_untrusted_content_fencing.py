@@ -150,7 +150,11 @@ async def test_search_diseases_definition_snippet_is_fenced_typed_object(
     structured, mirror = _both_views(result)
     for view in (structured, mirror):
         hit = next(r for r in view["results"] if r["mondo_id"] == _MONDO_ID)
-        assert hit["definition_snippet"]["kind"] == "untrusted_text"
+        # HOSTILE (< SEARCH_SNIPPET_CHARS) is not truncated, so the snippet's raw
+        # bytes == HOSTILE: assert the FULL fence contract on this default-mode
+        # surface -- digest over the exact hostile bytes, controls/zero-width/bidi
+        # stripped, injection prose + bare tool-name surviving as data.
+        _assert_fenced(hit["definition_snippet"])
         assert "definition" not in hit
         _assert_no_synthesized_siblings(hit)
 
@@ -193,6 +197,37 @@ async def test_get_disease_batch_fields_projection_cannot_bypass_fence(
     )
     structured, _mirror = _both_views(result)
     _assert_fenced(structured["results"][0]["definition"])
+
+
+async def test_get_disease_enforces_limits_only_over_emitted_definition(
+    hostile_facade: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Limits must be enforced over the FINAL, post-projection response: a mode
+    # or fieldset that omits the definition must not fail on a definition the
+    # caller never sees. Spy on enforce to capture exactly what it received.
+    import mondo_link.services.mondo_service as svc_mod
+
+    captured: list[list[Any]] = []
+
+    def _spy(objects: list[Any], **kwargs: Any) -> None:
+        captured.append(list(objects))
+
+    monkeypatch.setattr(svc_mod, "enforce_untrusted_text_limits", _spy)
+
+    # minimal: definition dropped -> NOTHING enforced.
+    await hostile_facade.call_tool("get_disease", {"term": _MONDO_ID, "response_mode": "minimal"})
+    assert captured[-1] == []
+
+    # sparse fieldset omitting definition -> NOTHING enforced.
+    await hostile_facade.call_tool(
+        "get_disease", {"term": _MONDO_ID, "response_mode": "full", "fields": ["mondo_id"]}
+    )
+    assert captured[-1] == []
+
+    # full mode emits the definition -> exactly one fenced object enforced.
+    await hostile_facade.call_tool("get_disease", {"term": _MONDO_ID, "response_mode": "full"})
+    assert len(captured[-1]) == 1
+    assert isinstance(captured[-1][0], UntrustedText)
 
 
 # -- Finding 2: compact snippet digest over the raw bytes, whitespace kept ----

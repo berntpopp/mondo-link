@@ -46,12 +46,18 @@ _OBJ = {"type": "object", "additionalProperties": True}
 _UNTRUSTED_TEXT: dict[str, Any] = {
     "type": "object",
     "additionalProperties": True,
+    # ``kind`` is a const (matching the reference ``Literal["untrusted_text"]``),
+    # and the full v1.1 shape is REQUIRED so a definition object missing any of
+    # kind/text/provenance/raw_sha256 fails validation rather than passing under
+    # ``additionalProperties``.
+    "required": ["kind", "text", "provenance", "raw_sha256"],
     "properties": {
-        "kind": {"type": "string", "enum": ["untrusted_text"]},
+        "kind": {"const": "untrusted_text"},
         "text": _STR,
         "provenance": {
             "type": "object",
             "additionalProperties": True,
+            "required": ["source", "record_id", "retrieved_at"],
             "properties": {
                 "source": _STR,
                 "record_id": _STR,

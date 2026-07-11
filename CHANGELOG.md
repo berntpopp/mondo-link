@@ -46,6 +46,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **List-item schema declares the literal.** The `get_disease_batch` item
   schema now declares `definition` as the `untrusted_text` object (`kind`
   literal), not hidden behind `additionalProperties`.
+- **Strict fenced-field schema.** The `untrusted_text` output schema now
+  declares `kind` as `const: "untrusted_text"` and requires
+  `[kind, text, provenance, raw_sha256]` (and provenance
+  `[source, record_id, retrieved_at]`), so a malformed/partial object no longer
+  validates under `additionalProperties`.
+- **Limits enforced over the emitted response.** `get_disease` now enforces the
+  v1.1 ceilings over the fenced objects actually present in the FINAL,
+  post-projection payload, so `response_mode="minimal"` or a sparse fieldset
+  that omits the definition never fails on a definition the caller never sees.
 
 ## [0.2.0] - 2026-07-10
 

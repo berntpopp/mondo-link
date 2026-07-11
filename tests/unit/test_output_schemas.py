@@ -116,3 +116,31 @@ async def test_batch_outputs_validate(tool_map: dict[str, Any]) -> None:
             tool_map, "get_disease_batch", terms=[_SGS, _MISSING], response_mode=mode
         )
         assert got["results"][0]["ok"] is True and got["results"][1]["ok"] is False
+
+
+def test_untrusted_text_schema_rejects_malformed_objects() -> None:
+    # The fenced-field schema must be STRICT: kind is a const and the full v1.1
+    # shape is required, so a definition object missing any field (which would
+    # otherwise pass under additionalProperties) fails validation.
+    from mondo_link.mcp.schemas import _UNTRUSTED_TEXT, _UNTRUSTED_TEXT_NULL
+
+    good = {
+        "kind": "untrusted_text",
+        "text": "A disease.",
+        "provenance": {
+            "source": "mondo",
+            "record_id": "MONDO:0007739",
+            "retrieved_at": "2026-07-11T00:00:00+00:00",
+        },
+        "raw_sha256": "0" * 64,
+    }
+    validator = Draft202012Validator(_UNTRUSTED_TEXT)
+    assert validator.is_valid(good)
+    assert not validator.is_valid({k: v for k, v in good.items() if k != "kind"})
+    assert not validator.is_valid({**good, "kind": "trusted"})  # const enforced
+    assert not validator.is_valid({k: v for k, v in good.items() if k != "raw_sha256"})
+    assert not validator.is_valid({**good, "provenance": {"source": "mondo"}})
+
+    null_validator = Draft202012Validator(_UNTRUSTED_TEXT_NULL)
+    assert null_validator.is_valid(None)  # nullable variant still accepts null
+    assert not null_validator.is_valid({k: v for k, v in good.items() if k != "kind"})
