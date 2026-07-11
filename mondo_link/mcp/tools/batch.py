@@ -23,6 +23,7 @@ from mondo_link.mcp.tools._common import FieldsArg, ResponseMode
 from mondo_link.mcp.untrusted_content import (
     UntrustedText,
     enforce_untrusted_text_limits,
+    sanitize_message,
 )
 
 if TYPE_CHECKING:
@@ -74,8 +75,16 @@ def register_batch_tools(mcp: FastMCP) -> None:
                     results.append({**rec, "query": query, "ok": True})
                 except Exception as exc:  # per-item boundary; the call still succeeds
                     code, message = classify_exception(exc)
+                    # `message` is a FIXED classified string; the echoed input is
+                    # code-point-stripped so a hostile identifier cannot smuggle
+                    # control/bidi code points into this bypass (success) row.
                     results.append(
-                        {"query": query, "ok": False, "error_code": code, "message": message}
+                        {
+                            "query": sanitize_message(query),
+                            "ok": False,
+                            "error_code": code,
+                            "message": message,
+                        }
                     )
             payload: dict[str, Any] = {"count": len(results), "results": results}
             payload.setdefault("_meta", {})["next_commands"] = after_resolve_batch(payload)
@@ -126,7 +135,12 @@ def register_batch_tools(mcp: FastMCP) -> None:
                 except Exception as exc:  # per-item boundary; the call still succeeds
                     code, message = classify_exception(exc)
                     results.append(
-                        {"term": term, "ok": False, "error_code": code, "message": message}
+                        {
+                            "term": sanitize_message(term),
+                            "ok": False,
+                            "error_code": code,
+                            "message": message,
+                        }
                     )
             enforce_untrusted_text_limits(fenced)
             payload: dict[str, Any] = {"count": len(results), "results": results}

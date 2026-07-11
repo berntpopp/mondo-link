@@ -9,11 +9,12 @@ message.
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, cast
 
 from pydantic import ValidationError as PydanticValidationError
 
@@ -29,7 +30,7 @@ from mondo_link.exceptions import (
 )
 from mondo_link.mcp import metrics
 from mondo_link.mcp.next_commands import cmd, default_error_next_commands, withdrawn_recovery
-from mondo_link.mcp.untrusted_content import UntrustedTextLimitError
+from mondo_link.mcp.untrusted_content import UntrustedTextLimitError, sanitize_message
 from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
 logger = logging.getLogger(__name__)
@@ -83,37 +84,89 @@ def _capabilities_version() -> str | None:
         return None
 
 
-def _safe_message(exc: BaseException) -> str:
-    return (str(exc) or exc.__class__.__name__)[:280]
+# FIXED, error-code-specific public messages. Classified exceptions build their
+# `str(exc)` from the caller's query/identifier or a local DB path/sqlite error,
+# so the message PROSE is attacker-/environment-influenced -- code-point stripping
+# alone would still leak it. We therefore NEVER interpolate `str(exc)` into a
+# caller-visible message: the actionable specifics ride the structured envelope
+# fields (`field`, `allowed_values`, `candidates`, `replaced_by`, ...), and the raw
+# detail stays only in the chained exception cause (server-side logs, class name).
+_FIXED_MESSAGES: dict[str, str] = {
+    "not_found": "No matching Mondo record was found for the request.",
+    "obsolete": "The requested Mondo term is obsolete; see replaced_by / candidates.",
+    "ambiguous_query": "The query matched multiple Mondo terms; pick one from candidates.",
+    "invalid_input": "The request arguments were invalid; check the field and retry.",
+    "limit_exceeded": "Response exceeded the untrusted-text size/count limit.",
+    "data_unavailable": (
+        "The local Mondo database is not available (it may be building). "
+        "Retry shortly or call get_diagnostics."
+    ),
+    "rate_limited": "Upstream rate limit hit. Retry shortly.",
+    "upstream_unavailable": "The upstream is temporarily unavailable.",
+    "internal_error": "An internal error occurred. The request was not completed.",
+}
+
+#: An argument NAME is echoed back to the caller ONLY when it is a plain
+#: identifier: a name matching this grammar provably cannot carry spaces,
+#: injection prose, or forbidden code points, so it is safe to surface. Any other
+#: (caller-controlled, unknown) argument name is redacted, never echoed verbatim.
+_SAFE_ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}$")
+
+
+def _sanitize_tree(value: Any) -> Any:
+    """Recursively code-point-strip every string leaf of a built error envelope.
+
+    A last-step backstop ON TOP OF the fixed-message/redaction discipline: it
+    strips the forbidden control/zero-width/bidi/NUL code points from every string
+    (message, field, allowed_values, hint, candidates[*].name, replaced_by,
+    ``_meta.next_commands[*].arguments.*`` -- the caller's own query echoed into a
+    recovery step) without reshaping the structure. It does not make prose safe;
+    prose is kept safe by never interpolating attacker-influenced text above.
+    """
+    if isinstance(value, str):
+        return sanitize_message(value)
+    if isinstance(value, dict):
+        return {key: _sanitize_tree(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_tree(item) for item in value]
+    return value
 
 
 def _classify(exc: BaseException) -> tuple[str, str]:
-    """Return ``(error_code, client_safe_message)`` for an exception."""
+    """Return ``(error_code, FIXED client-safe message)`` for an exception.
+
+    The message is a fixed, error-code-specific string -- ``str(exc)`` (which may
+    embed the caller's query, an identifier, or a local filesystem path) is never
+    interpolated. ``McpToolError`` carries a server-authored explicit message, so
+    it is passed through the code-point backstop only.
+    """
     if isinstance(exc, McpToolError):
-        return exc.error_code, exc.message
+        return exc.error_code, sanitize_message(exc.message)
     if isinstance(exc, UntrustedTextLimitError):
         # v1.1 response-limit breach: an explicit, typed limit error -- NOT a
         # masked internal_error. The standard forbids silently omitting fenced
         # content over a ceiling, so the whole response fails loudly and the
         # caller can retry with a narrower request (smaller limit / minimal mode).
-        return "invalid_input", "Response exceeded the untrusted-text size/count limit."
-    if isinstance(exc, NotFoundError):  # WithdrawnEntryError subclasses this
-        return "not_found", _safe_message(exc)
+        return "invalid_input", _FIXED_MESSAGES["limit_exceeded"]
+    if isinstance(exc, WithdrawnEntryError):  # NotFoundError subclass; obsolete term
+        return "not_found", _FIXED_MESSAGES["obsolete"]
+    if isinstance(exc, NotFoundError):
+        return "not_found", _FIXED_MESSAGES["not_found"]
     if isinstance(exc, AmbiguousQueryError):
-        return "ambiguous_query", _safe_message(exc)
+        return "ambiguous_query", _FIXED_MESSAGES["ambiguous_query"]
     if isinstance(exc, InvalidInputError):
-        return "invalid_input", _safe_message(exc)
+        return "invalid_input", _FIXED_MESSAGES["invalid_input"]
     if isinstance(exc, DataUnavailableError):
-        return "data_unavailable", _safe_message(exc)
+        return "data_unavailable", _FIXED_MESSAGES["data_unavailable"]
     if isinstance(exc, RateLimitError):
-        return "rate_limited", "Upstream rate limit hit. Retry shortly."
+        return "rate_limited", _FIXED_MESSAGES["rate_limited"]
     if isinstance(exc, ServiceUnavailableError | DownloadError):
-        return "upstream_unavailable", "The upstream is temporarily unavailable."
+        return "upstream_unavailable", _FIXED_MESSAGES["upstream_unavailable"]
     if isinstance(exc, PydanticValidationError):
-        first = exc.errors()[0]
-        loc = ".".join(str(p) for p in first["loc"]) or "input"
-        return "invalid_input", f"Invalid input -- `{loc}`: {first['msg']}"
-    return "internal_error", "An internal error occurred. The request was not completed."
+        # Map to a fixed reason; the pydantic `msg` can echo the rejected input
+        # and the `loc`/field name is caller-controlled -- neither is interpolated.
+        return "invalid_input", _FIXED_MESSAGES["invalid_input"]
+    return "internal_error", _FIXED_MESSAGES["internal_error"]
 
 
 def classify_exception(exc: BaseException) -> tuple[str, str]:
@@ -135,6 +188,11 @@ def _recovery_action(error_code: str) -> str:
 
 
 def _error_envelope(exc: BaseException, context: McpErrorContext) -> dict[str, Any]:
+    """Build the structured error envelope, then run the recursive code-point pass."""
+    return cast(dict[str, Any], _sanitize_tree(_build_error_envelope(exc, context)))
+
+
+def _build_error_envelope(exc: BaseException, context: McpErrorContext) -> dict[str, Any]:
     error_code, message = _classify(exc)
     envelope: dict[str, Any] = {
         "success": False,
@@ -201,50 +259,64 @@ def build_arg_error_envelope(
     When ``constraints`` is supplied the failure is an invalid *value* on a known
     argument, so ``allowed_values`` carries the valid range/enum (not the list of
     argument *names*) and the message states the constraint.
+
+    The ``loc`` (argument name) is caller-controlled for an *unknown* argument, so
+    it is echoed only when it is a plain identifier (``_SAFE_ARG_NAME``, provably
+    prose-free); otherwise it is redacted -- never surfaced verbatim in the message
+    or ``field``. The final envelope is run through the recursive code-point pass.
     """
+    safe_loc = loc if _SAFE_ARG_NAME.match(loc) else None
+    field_value = safe_loc or "unknown_argument"
+    name_ref = f"`{safe_loc}`" if safe_loc else "the supplied argument"
+    meta = {
+        "tool": tool_name,
+        "request_id": _request_id(),
+        "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
+        "next_commands": [cmd("get_server_capabilities")],
+    }
     if constraints is not None:
         allowed, human = constraints
-        message = f"Invalid value for argument `{loc}` of {tool_name}: {human}."
-        return {
-            "success": False,
-            "error_code": "invalid_input",
-            "message": message[:280],
-            "retryable": False,
-            "recovery_action": "reformulate_input",
-            "field": loc,
-            "allowed_values": allowed,
-            "hint": signature,
-            "_meta": {
-                "tool": tool_name,
-                "request_id": _request_id(),
-                "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
-                "next_commands": [cmd("get_server_capabilities")],
-            },
-        }
+        message = f"Invalid value for argument {name_ref} of {tool_name}: {human}."
+        return cast(
+            dict[str, Any],
+            _sanitize_tree(
+                {
+                    "success": False,
+                    "error_code": "invalid_input",
+                    "message": message[:280],
+                    "retryable": False,
+                    "recovery_action": "reformulate_input",
+                    "field": field_value,
+                    "allowed_values": allowed,
+                    "hint": signature,
+                    "_meta": meta,
+                }
+            ),
+        )
     if error_type == "missing_argument":
-        head = f"Missing required argument `{loc}` for {tool_name}."
+        head = f"Missing required argument {name_ref} for {tool_name}."
     elif error_type == "unexpected_keyword_argument":
-        head = f"Unknown argument `{loc}` for {tool_name}."
+        head = f"Unknown argument {name_ref} for {tool_name}."
     else:
-        head = f"Invalid value for argument `{loc}` of {tool_name}."
+        head = f"Invalid value for argument {name_ref} of {tool_name}."
     dym = f" Did you mean `{suggestion}`?" if suggestion else ""
     message = f"{head}{dym} Valid argument names are listed in allowed_values."
-    return {
-        "success": False,
-        "error_code": "invalid_input",
-        "message": message[:280],
-        "retryable": False,
-        "recovery_action": "reformulate_input",
-        "field": loc,
-        "allowed_values": valid_params,
-        "hint": signature,
-        "_meta": {
-            "tool": tool_name,
-            "request_id": _request_id(),
-            "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
-            "next_commands": [cmd("get_server_capabilities")],
-        },
-    }
+    return cast(
+        dict[str, Any],
+        _sanitize_tree(
+            {
+                "success": False,
+                "error_code": "invalid_input",
+                "message": message[:280],
+                "retryable": False,
+                "recovery_action": "reformulate_input",
+                "field": field_value,
+                "allowed_values": valid_params,
+                "hint": signature,
+                "_meta": meta,
+            }
+        ),
+    )
 
 
 def _stamp_capabilities_version(meta: dict[str, Any]) -> None:

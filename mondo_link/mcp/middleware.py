@@ -32,6 +32,44 @@ from mondo_link.mcp.envelope import build_arg_error_envelope
 
 logger = logging.getLogger(__name__)
 
+#: FastMCP logs the FULL pydantic argument-validation detail (the caller-supplied
+#: argument NAME and rejected input value, with any control/zero-width/bidi/NUL
+#: code points) at WARNING from ``fastmcp.server.server`` BEFORE this middleware
+#: reshapes it. That record bypasses the envelope, so scrub it at the source.
+_FASTMCP_SERVER_LOGGER = "fastmcp.server.server"
+_SCRUBBED_LOG_PREFIXES = ("Invalid arguments for tool", "Error calling tool")
+
+
+class _ScrubValidationLogFilter(logging.Filter):
+    """Replace FastMCP's arg-validation/error log records with fixed metadata.
+
+    Clears ``args``/``exc_info``/``exc_text`` so the raw caller input (which the
+    record interpolates) can never reach a log sink. Always returns ``True`` -- the
+    (now caller-input-free) record is still emitted for operational visibility.
+    """
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        msg = record.msg if isinstance(record.msg, str) else ""
+        if msg.startswith(_SCRUBBED_LOG_PREFIXES):
+            record.msg = "tool call rejected: arguments failed validation"
+            record.args = ()
+            record.exc_info = None
+            record.exc_text = None
+            record.stack_info = None
+        return True
+
+
+_validation_log_filter_installed = False
+
+
+def install_validation_log_filter() -> None:
+    """Idempotently attach the scrubbing filter to FastMCP's server logger."""
+    global _validation_log_filter_installed
+    if _validation_log_filter_installed:
+        return
+    logging.getLogger(_FASTMCP_SERVER_LOGGER).addFilter(_ScrubValidationLogFilter())
+    _validation_log_filter_installed = True
+
 
 class ArgValidationMiddleware(Middleware):
     """Reshape argument-binding errors into the envelope and apply argument aliases."""
@@ -113,7 +151,9 @@ class ArgValidationMiddleware(Middleware):
             suggestion=suggestion,
             constraints=constraints,
         )
-        logger.warning("mcp_arg_error tool=%s loc=%s type=%s", name, loc, error_type)
+        # NB: never log the raw `loc` -- an unknown argument NAME is caller-
+        # controlled and can carry prose / forbidden code points.
+        logger.warning("mcp_arg_error tool=%s type=%s", name, error_type)
         return ToolResult(
             structured_content=envelope,
             content=[TextContent(type="text", text=json.dumps(envelope))],

@@ -9,8 +9,8 @@ kept trustworthy by SEVERING attacker/upstream-influenced strings at the source)
 from __future__ import annotations
 
 from mondo_link.mcp.untrusted_content import (
-    MAX_MESSAGE_CHARS,
     FORBIDDEN_CODEPOINTS,
+    MAX_MESSAGE_CHARS,
     sanitize_message,
 )
 
