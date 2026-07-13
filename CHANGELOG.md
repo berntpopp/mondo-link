@@ -6,6 +6,19 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-07-13
+
+### Fixed
+
+- Re-pin the reusable container CI and container release callers to the
+  corrected GeneFoundry router release standard
+  (`86b11f7ed062ed84dfddcbd309e34da88f3dae5b`), so the signed release evidence
+  states the data contract this repository actually declares. The previous
+  standard hardcoded a `data-independent` contract and `{"mode":"none"}` data
+  requirements, which understated this `data-bound` / `upstream-live` service in
+  its signed manifest and silently skipped the data-binding assertion that the
+  captured data identity equals the declared artifact. Research use only.
+
 ## [0.3.4] - 2026-07-13
 
 ### Fixed
