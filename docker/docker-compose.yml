@@ -59,10 +59,12 @@ services:
     cap_drop:
       - ALL
     init: true
-    # Limits in both forms: deploy.resources (honored by Compose v2) and the
-    # non-swarm keys (honored by legacy docker-compose) so they apply either way.
-    mem_limit: 1g
-    cpus: 1.0
+    # Limits are declared ONLY as deploy.resources.limits, which Compose v2 honors.
+    # The legacy non-swarm aliases (mem_limit/cpus) must NOT be set alongside them:
+    # Compose rejects the project outright when an alias and its deploy.resources
+    # counterpart disagree, and any overlay that retunes deploy.resources.limits
+    # (the central container-CI smoke stack does) cannot reset a legacy alias. The
+    # production overlay already resets these aliases, so runtime limits are unchanged.
     pids_limit: 256
     deploy:
       resources:
