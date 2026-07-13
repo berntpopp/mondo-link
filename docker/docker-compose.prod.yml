@@ -1,44 +1,70 @@
 # Production overlay for mondo-link (Container & Deployment Hardening Standard v1).
 #
+#   MONDO_LINK_IMAGE=ghcr.io/berntpopp/mondo-link@sha256:<digest> \
 #   docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
-#
-# Expose-only behind the reverse proxy: the base file's published host-port
-# mapping is dropped with `ports: !reset []`. `!reset` (not a plain `[]`) is
-# REQUIRED because Compose MERGES list fields across `-f` overlays, so `ports: []`
-# would NOT drop the base "<host>:8000" mapping and the endpoint would stay
-# published on the public IP. The container is reachable only via the proxy.
+
 services:
   mondo-link:
-    environment:
-      MONDO_LINK_LOG_LEVEL: INFO
-      MONDO_LINK_LOG_FORMAT: json
-      # Override with the exact production hostname when it differs from NPM.
-      MONDO_LINK_ALLOWED_HOSTS: '["localhost","127.0.0.1","::1","mondo-link.genefoundry.org"]'
+    build: !reset null
+    image: ${MONDO_LINK_IMAGE:?Set MONDO_LINK_IMAGE to ghcr.io/berntpopp/mondo-link@sha256:<digest>}
+    pull_policy: missing
+    container_name: !reset null
+    env_file: !reset []
     ports: !reset []
     expose:
       - "8000"
+    environment:
+      GF_HEALTHCHECK_HOST: localhost
+      MONDO_LINK_HOST: 0.0.0.0
+      MONDO_LINK_PORT: 8000
+      MONDO_LINK_TRANSPORT: unified
+      MONDO_LINK_MCP_PATH: /mcp
+      MONDO_LINK_LOG_LEVEL: INFO
+      MONDO_LINK_LOG_FORMAT: json
+      MONDO_LINK_ALLOWED_HOSTS: '["localhost","127.0.0.1","::1","mondo-link.genefoundry.org"]'
+      MONDO_LINK_DATA__DATA_DIR: /data
+      MONDO_LINK_DATA__AUTO_BOOTSTRAP: "true"
+      MONDO_LINK_DATA__REFRESH_ENABLED: "false"
+    volumes: !override
+      - mondo-data:/data
     read_only: true
-    tmpfs:
-      - /tmp/mondo-link:rw,noexec,nosuid,size=512m,mode=1777
-    # Replace the base list instead of merging a duplicate value, which Compose rejects.
+    tmpfs: !override
+      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
     security_opt: !override
       - no-new-privileges:true
-    cap_drop:
+    cap_drop: !override
       - ALL
     init: true
-    mem_limit: 1g
-    cpus: 1.0
-    pids_limit: 256
+    restart: on-failure
+    mem_limit: !reset null
+    cpus: !reset null
+    pids_limit: !reset null
     deploy:
       resources:
         limits:
           memory: 1g
           cpus: "1.0"
           pids: 256
-    restart: on-failure
+    healthcheck: !override
+      test: ["CMD", "sh", "-c", "curl -f -H \"Host: $${GF_HEALTHCHECK_HOST}\" http://localhost:8000/health"]
+      interval: 20s
+      timeout: 5s
+      retries: 5
     logging:
       driver: "json-file"
       options:
         max-size: "50m"
         max-file: "5"
         labels: "service=mondo-link,environment=production"
+    networks: !override
+      - default
+
+  refresh: !reset null
+
+volumes: !override
+  mondo-data:
+    name: mondo-link_mondo-data
+
+networks: !override
+  default:
+    name: mondo-link_default
