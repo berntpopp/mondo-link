@@ -36,16 +36,26 @@ RUN uv sync --frozen --no-dev --active --no-install-project
 FROM python:3.12-slim@sha256:423ed6ab25b1921a477529254bfeeabf5855151dc2c3141699a1bfc852199fbf AS production
 
 
-# Runtime identity. The deploy builds from a source checkout rather than pulling a
-# registry image, so there is no immutable OCI digest to pin; stamping the exact
-# commit into the image is what lets an operator prove the running container was
-# built from the revision the router's release inventory pins, instead of trusting
-# a moving `main`. VCS_REF is unprefixed on purpose: a <SERVICE>_-prefixed name
-# would land in the pydantic settings namespace.
-ARG VCS_REF=unknown
-LABEL org.opencontainers.image.source="https://github.com/berntpopp/mondo-link" \
-      org.opencontainers.image.revision="${VCS_REF}"
-ENV VCS_REF="${VCS_REF}"
+# Public release identity. Release automation supplies all three values from the
+# validated source tag/commit and build record; defaults identify a local build.
+ARG APP_VERSION=0.0.0
+ARG VCS_REF=0000000000000000000000000000000000000000
+ARG BUILD_DATE=1970-01-01T00:00:00Z
+LABEL org.opencontainers.image.title="Mondo-Link" \
+      org.opencontainers.image.description="FastAPI and MCP server for the Mondo Disease Ontology" \
+      org.opencontainers.image.source="https://github.com/berntpopp/mondo-link" \
+      org.opencontainers.image.url="https://github.com/berntpopp/mondo-link" \
+      org.opencontainers.image.documentation="https://github.com/berntpopp/mondo-link#readme" \
+      org.opencontainers.image.version="${APP_VERSION}" \
+      org.opencontainers.image.revision="${VCS_REF}" \
+      org.opencontainers.image.created="${BUILD_DATE}" \
+      org.opencontainers.image.licenses="MIT" \
+      org.opencontainers.image.vendor="GeneFoundry" \
+      org.genefoundry.research-use-only="true" \
+      org.genefoundry.data-policy="code-only"
+ENV VCS_REF="${VCS_REF}" \
+    MONDO_LINK_GIT_SHA="${VCS_REF}" \
+    MONDO_LINK_BUILT_AT="${BUILD_DATE}"
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
@@ -55,12 +65,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     MONDO_LINK_PORT=8000 \
     MONDO_LINK_TRANSPORT=unified \
     MONDO_LINK_MCP_PATH=/mcp \
-    MONDO_LINK_DATA__DATA_DIR=/app/data \
+    MONDO_LINK_DATA__DATA_DIR=/data \
     # The entrypoint builds the index before the server starts. Refresh is owned
     # by cron (see docs/deployment.md), so the in-app scheduler stays OFF.
     MONDO_LINK_DATA__AUTO_BOOTSTRAP=true \
     MONDO_LINK_DATA__REFRESH_ENABLED=false \
-    TMPDIR=/tmp/mondo-link
+    TMPDIR=/tmp
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
@@ -70,8 +80,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 RUN groupadd --system app && \
     useradd --system --gid app --home /home/app --create-home app && \
-    mkdir -p /tmp/mondo-link /app/data && \
-    chown -R app:app /tmp/mondo-link /app/data /home/app
+    mkdir -p /tmp /data && \
+    chown -R app:app /tmp /data /home/app
 
 COPY --from=builder /opt/venv /opt/venv
 
@@ -83,22 +93,13 @@ COPY --chown=app:app ./docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 
 RUN /opt/venv/bin/pip install . --no-deps && chmod +x /usr/local/bin/entrypoint.sh
 
-# Stamp build provenance so get_server_capabilities/_meta can report which build
-# answered. Pass at build time, e.g.:
-#   docker build --build-arg MONDO_LINK_GIT_SHA=$(git rev-parse --short HEAD) \
-#                --build-arg MONDO_LINK_BUILT_AT=$(date -u +%Y-%m-%dT%H:%M:%SZ) .
-ARG MONDO_LINK_GIT_SHA=unknown
-ARG MONDO_LINK_BUILT_AT
-ENV MONDO_LINK_GIT_SHA=${MONDO_LINK_GIT_SHA} \
-    MONDO_LINK_BUILT_AT=${MONDO_LINK_BUILT_AT}
-
 USER app
 
 EXPOSE 8000
 
-# The built SQLite index lives under MONDO_LINK_DATA__DATA_DIR (/app/data).
+# The built SQLite index lives under MONDO_LINK_DATA__DATA_DIR (/data).
 # Mount a volume there so the index persists across container restarts.
-VOLUME ["/app/data"]
+VOLUME ["/data"]
 
 # start-period covers the entrypoint's first build (download + build).
 HEALTHCHECK --interval=30s --timeout=10s --retries=3 --start-period=120s \

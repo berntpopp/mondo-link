@@ -1,42 +1,64 @@
-# Container & Deployment Hardening Standard v1, rule 4: keep secrets and cruft
-# out of every image layer and shrink the build context. Build context is the
-# repo root (docker/Dockerfile uses `context: ..`).
+# Keep the build context small and the image free of secrets or data artifacts.
 
-# Secrets — never bake env files into a layer (keep the committed examples).
+# VCS / CI
+.git/
+.gitignore
+.gitattributes
+.github/
+
+# Secrets and local env files
 .env
 .env.*
 **/.env
 **/.env.*
 !.env.example
 !.env.docker.example
+docker/.env
 
-# VCS / CI
-.git
-.gitignore
-.github
+# Virtual environments
+.venv/
+venv/
+env/
 
-# Python caches and build artifacts
+# Python caches and build output
 __pycache__/
-*.pyc
+*.py[cod]
 *.pyo
 *.egg-info/
 build/
 dist/
-.venv/
-.mypy_cache/
 .pytest_cache/
 .ruff_cache/
-.benchmarks/
-htmlcov/
+.mypy_cache/
 .coverage
+coverage.xml
+htmlcov/
 
-# Tests, docs, planning, and runtime-built data (none are COPYed into the image)
+# Tests, docs, planning, and authoritative/runtime data
 tests/
 docs/
 .planning/
 data/
+datasets/
+corpus/
+output/
+outputs/
+*.sqlite
+*.sqlite-*
+*.db
+*.duckdb
+*.parquet
+*.vcf
+*.bcf
+*.obo
+*.owl
+*.tsv
+*.csv
+*.zst
+*.gz
+*.log
 
-# Editor / OS
+# Editor / OS metadata
 .vscode/
 .idea/
 .DS_Store
