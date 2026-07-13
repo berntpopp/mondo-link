@@ -50,10 +50,10 @@ services:
     # Container & Deployment Hardening Standard v1 (backported so running the base
     # file directly is still safe). The built SQLite index lives on the `mondo-data`
     # named volume (writable); the rootfs is read-only and scratch is an explicit,
-    # size-capped tmpfs (TMPDIR=/tmp/mondo-link in the image).
+    # size-capped tmpfs (TMPDIR=/tmp in the image).
     read_only: true
     tmpfs:
-      - /tmp/mondo-link:rw,noexec,nosuid,size=512m,mode=1777
+      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
     security_opt:
       - no-new-privileges:true
     cap_drop:
