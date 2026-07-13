@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "dockerfile": "docker/Dockerfile",
+  "target": "production",
+  "platform": "linux/amd64",
+  "service": {
+    "compose_files": [
+      "docker/docker-compose.yml",
+      "docker/docker-compose.prod.yml"
+    ],
+    "name": "mondo-link",
+    "container_port": 8000,
+    "health_path": "/health",
+    "mcp_path": "/mcp",
+    "startup_timeout_seconds": 300
+  },
+  "data": {
+    "mode": "upstream-live",
+    "image_allowlist": [
+      "home/app/web/mondo_link/data/__init__.py",
+      "home/app/web/mondo_link/data/repository.py",
+      "opt/venv/lib/python3.12/site-packages/mondo_link/data/__init__.py",
+      "opt/venv/lib/python3.12/site-packages/mondo_link/data/repository.py"
+    ],
+    "egress_allowlist": [
+      "purl.obolibrary.org",
+      "raw.githubusercontent.com"
+    ],
+    "release_tag": "observed-2026.07.13",
+    "digest": "sha256:c588ebf0141f1cf8cb30bbc0a0ef545dc12045402ddaaf7e4ecc4d1b236a9191",
+    "reproducible_rollback": false
+  },
+  "runtime_cache": {
+    "path": "/data",
+    "eviction": "operator-managed persistent SQLite cache rebuilt from the declared upstream live sources",
+    "deletable_without_authoritative_data_loss": true
+  },
+  "definitions": {
+    "contract": "data-bound"
+  },
+  "smoke": {
+    "profile": "prepared-live-fixture"
+  }
+}
