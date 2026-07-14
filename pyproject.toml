@@ -91,10 +91,6 @@ line-ending = "lf"
 "tests/**/*" = ["S101", "S104", "S110", "T20", "B011", "SIM105", "SIM108"]
 "mcp_server.py" = ["T20"]
 "scripts/**/*" = ["T20"]
-# Vendored verbatim from genefoundry-router (GeneFoundry README Standard v1). The
-# fleet keeps this linter byte-identical across every repo, so it is not edited to
-# satisfy a local rule.
-"scripts/check_readme.py" = ["T20", "B905"]
 "mondo_link/ingest/cli.py" = ["T20"]
 
 [tool.ruff.lint.pydocstyle]
