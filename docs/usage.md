@@ -105,6 +105,29 @@ map_cross_ontology(term="MONDO:0008426", prefixes=["OMIM", "ORPHA"])
 Predicate ranking: `exactMatch > equivalentTo > closeMatch > narrowMatch >
 broadMatch > xref`. `origin` is `obo_xref` or `sssom`.
 
+## Batch
+
+`resolve_disease_batch(queries)` and `get_disease_batch(terms)` amortise the round
+trip when you hold many identifiers. Both accept **at most 50 items** (a larger list
+is a single `invalid_input` error) and are **partial-success**: the call never fails
+wholesale — one bad item becomes its own failed row.
+
+```
+resolve_disease_batch(queries=["Marfan syndrome", "OMIM:182212", "MONDO:0008426"])
+→ {count, results: [ {mondo_id, name, match_type, query, ok: true}
+                   | {index, ok: false, error_code, message} ], _meta}
+
+get_disease_batch(terms=["MONDO:0008426", "OMIM:182212"], fields=["xrefs.OMIM"])
+→ {count, results: [ {mondo_id, name, ..., term, ok: true}
+                   | {index, ok: false, error_code, message} ], _meta}
+```
+
+A **failed row identifies its input by `index`, not by echoing the value** — the
+1:1 input ordering correlates it, while the raw caller string (which could carry
+injection prose that survives code-point stripping) is never reflected back. The
+`message` is a fixed, classified string. Rows are compact per item;
+`get_disease_batch` also takes `fields=[...]` for a sparse projection.
+
 ## Typical workflow
 
 ```
