@@ -15,6 +15,9 @@ first start it bootstraps the Mondo index into the data volume (unless one is
 already present). Mount a persistent volume at the data directory so the index
 survives restarts.
 
+Backends are unauthenticated by design and MUST be reachable only through the
+GeneFoundry router / reverse proxy — never published directly.
+
 ## Configuration
 
 Settings are read from the environment with the `MONDO_LINK_` prefix; nested
@@ -48,6 +51,24 @@ data settings use a `__` delimiter (`pydantic-settings`).
 | `MONDO_LINK_DATA__REFRESH_INTERVAL_HOURS` | `168` | Refresh cadence (weekly). |
 | `MONDO_LINK_DATA__BUILD_LOCK_TIMEOUT` | `900` | Seconds to wait for the build lock. |
 
+The source URLs and the SSSOM-is-optional contract are documented in
+[data.md](data.md#sources).
+
+### Host & Origin allowlists
+
+HTTP deployments enforce **exact** Host and Origin allowlists on every route.
+
+- `MONDO_LINK_ALLOWED_HOSTS` — a JSON list of exact accepted `Host` values.
+  Configure it to contain **the public reverse-proxy hostname** in addition to the
+  loopback defaults (`localhost`, `127.0.0.1`, `::1`); otherwise a proxied request
+  is rejected. Wildcards are rejected.
+- `MONDO_LINK_ALLOWED_ORIGINS` — the browser-origin admission gate. It defaults to
+  `[]`, which **permits requests without an `Origin` header** (i.e. non-browser
+  MCP clients) while admitting no browser origin.
+- `MONDO_LINK_CORS_ORIGINS` — CORS *response* headers, separate from the
+  request-boundary policy above. An origin you intend to serve in a browser must
+  appear in **both** lists.
+
 ## Data refresh
 
 Two options, mutually compatible:
@@ -60,6 +81,9 @@ Two options, mutually compatible:
 
 `make data-status` (`mondo-link-data status`) prints the loaded Mondo release
 and counts — use it as a readiness/freshness check.
+
+The sources, the conditional-GET / atomic-build mechanics and the citation
+contract are documented in [data.md](data.md).
 
 ## Health
 
