@@ -221,7 +221,14 @@ def test_get_disease_compact_collapses_synonyms(service: MondoService) -> None:
 
 def test_get_disease_minimal(service: MondoService) -> None:
     rec = service.get_disease("MONDO:0007739", response_mode="minimal")
-    assert set(rec) == {"mondo_id", "name"}
+    # minimal keeps anchors + every populated collection (rows narrowed to their
+    # stable identifiers); it NEVER deletes a collection, and drops optional detail.
+    assert {"mondo_id", "name", "mondo_version"} <= set(rec)
+    assert "definition" not in rec and "obsolete" not in rec
+    assert rec["parents"] and all(set(p) <= {"mondo_id"} for p in rec["parents"])
+    assert rec["xrefs"] and all(
+        set(e) <= {"object_id"} for rows in rec["xrefs"].values() for e in rows
+    )
 
 
 def test_get_disease_obsolete_raises(service: MondoService) -> None:

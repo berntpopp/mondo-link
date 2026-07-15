@@ -122,8 +122,10 @@ async def test_data_unavailable_message_severs_db_path_and_sqlite_error(
     )
     mcp = facade_factory(exc)
     result = await mcp.call_tool("get_disease", {"term": "MONDO:0012345"})
+    # the local index is this server's only upstream -> upstream_unavailable (closed enum)
+    assert result.is_error is True
     for view in _both_views(result):
-        assert view["error_code"] == "data_unavailable"
+        assert view["error_code"] == "upstream_unavailable"
         msg = view["message"]
         assert LEAKED_DB_PATH not in msg
         assert "/srv/secret" not in msg
@@ -167,7 +169,7 @@ async def test_batch_row_data_unavailable_severs_path(facade_factory: Any) -> No
     result = await mcp.call_tool("get_disease_batch", {"terms": ["MONDO:0012345"]})
     for view in _both_views(result):
         row = view["results"][0]
-        assert row["error_code"] == "data_unavailable"
+        assert row["error_code"] == "upstream_unavailable"
         assert LEAKED_DB_PATH not in row["message"]
         assert "/srv/secret" not in row["message"]
 
@@ -175,23 +177,32 @@ async def test_batch_row_data_unavailable_severs_path(facade_factory: Any) -> No
 # -- recursive whole-envelope backstop (candidates leaf) ----------------------
 
 
-async def test_ambiguous_candidates_are_id_only_no_name_prose(facade_factory: Any) -> None:
+async def test_ambiguous_candidate_name_is_never_taken_from_the_exception(
+    facade_factory: Any,
+) -> None:
+    # SECURITY: a candidate ``name`` is NEVER copied from the exception -- an exception
+    # attribute is free-text that can carry prompt-injection prose surviving code-point
+    # stripping. The name is re-derived from the DB by the validated id; this facade's
+    # service has no repo, so it cannot vouch for the id and the candidate is ID-ONLY.
+    # The hostile name (and the invalid-id candidate) must never reach either view.
     exc = AmbiguousQueryError(
         f"'{HOSTILE}' matches 2 Mondo terms",
         candidates=[
             {"mondo_id": "MONDO:0000001", "name": f"Alpha {INJECTION}{_TAIL}", "label_type": "x"},
-            {"mondo_id": "MONDO:0000002", "name": "Beta", "label_type": "x"},
+            {"mondo_id": "MONDO:0000002", "name": HOSTILE, "label_type": "x"},
+            {"mondo_id": "bogus-id", "name": "Beta"},  # invalid id -> dropped entirely
         ],
     )
     mcp = facade_factory(exc)
     result = await mcp.call_tool("resolve_disease", {"query": "anything"})
+    assert result.is_error is True
     for view in _both_views(result):
         assert view["error_code"] == "ambiguous_query"
-        _assert_clean_tree(view)
-        # candidates are rebuilt to validated ids ONLY -- the free-text name
-        # (carrying prose) is structurally excluded, not merely sanitized.
+        _assert_clean_tree(view)  # no injection prose, no code points, anywhere
+        # candidates are grammar-validated ids ONLY -- no exception-carried name survives
         for cand in view["candidates"]:
-            assert set(cand) == {"mondo_id"}
+            assert set(cand) == {"mondo_id"}, cand
+        assert [c["mondo_id"] for c in view["candidates"]] == ["MONDO:0000001", "MONDO:0000002"]
 
 
 # -- hostile / unknown argument name -------------------------------------------
@@ -273,6 +284,9 @@ async def test_hostile_unknown_resource_uri_is_not_echoed(facade_factory: Any) -
 
 
 async def test_complete_error_payload_has_no_prose_or_code_points(facade_factory: Any) -> None:
+    # The caller's HOSTILE query is never echoed, the invalid-id candidate is dropped, and
+    # NO exception-carried name (hostile prose) survives -- candidates are id-only here
+    # because the raising service cannot re-derive a trusted DB label.
     exc = AmbiguousQueryError(
         f"'{HOSTILE}' is ambiguous",
         candidates=[
@@ -285,7 +299,7 @@ async def test_complete_error_payload_has_no_prose_or_code_points(facade_factory
     structured, mirror = _both_views(result)
     for view in (structured, mirror):
         _assert_clean_tree(view)
-    # the invalid-id candidate was dropped; the valid one carries id only (no name)
+    # the invalid-id candidate was dropped; the valid one carries id ONLY (no exc name)
     assert structured["candidates"] == [{"mondo_id": "MONDO:0000001"}]
 
 

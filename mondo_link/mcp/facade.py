@@ -30,6 +30,11 @@ def create_mondo_mcp() -> FastMCP:
         version=__version__,
         instructions=MONDO_SERVER_INSTRUCTIONS,
         mask_error_details=True,
+        # Tool-Surface Budget v1: do not inline $ref definitions into every input
+        # schema (none of our input schemas contain a $ref, so this is free and safe
+        # and trims the advertised surface). outputSchema is separately suppressed
+        # per-tool via output_schema=None (see tools/__init__.py).
+        dereference_schemas=False,
     )
     # FastMCP configures its own non-propagating RichHandlers, which bypass a root-only
     # scrub filter -- attach the Layer-5 filter to every SOURCE logger (incl. root,

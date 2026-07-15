@@ -398,4 +398,4 @@ async def test_get_disease_batch_limit_breach_maps_to_invalid_input(
 def test_untrusted_text_limit_error_classifies_as_typed_error() -> None:
     code, _message = classify_exception(UntrustedTextLimitError("too big"))
     assert code == "invalid_input"
-    assert code != "internal_error"
+    assert code != "internal"

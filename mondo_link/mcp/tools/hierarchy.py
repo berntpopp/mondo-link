@@ -14,12 +14,6 @@ from mondo_link.mcp.next_commands import (
     after_descendants,
     after_parents,
 )
-from mondo_link.mcp.schemas import (
-    ANCESTORS_SCHEMA,
-    CHILDREN_SCHEMA,
-    DESCENDANTS_SCHEMA,
-    PARENTS_SCHEMA,
-)
 from mondo_link.mcp.service_adapters import get_mondo_service
 from mondo_link.mcp.tools._common import ResponseMode, TermStr
 
@@ -39,7 +33,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         name="get_disease_ancestors",
         title="Get Disease Ancestors",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=ANCESTORS_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "hierarchy", "closure"},
         description=(
             "Return all transitive is_a ancestors (broader diseases) of a Mondo term "
@@ -76,7 +70,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         name="get_disease_descendants",
         title="Get Disease Descendants",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=DESCENDANTS_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "hierarchy", "closure"},
         description=(
             "Return all transitive is_a descendants (more specific diseases) of a "
@@ -113,7 +107,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         name="get_disease_parents",
         title="Get Disease Parents",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=PARENTS_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "hierarchy"},
         description=(
             "Return the direct is_a parents (immediate broader diseases) of a Mondo "
@@ -141,7 +135,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         name="get_disease_children",
         title="Get Disease Children",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=CHILDREN_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "hierarchy"},
         description=(
             "Return the direct is_a children (immediate more-specific diseases) of a "

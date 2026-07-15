@@ -45,7 +45,7 @@ make dev            # unified REST + MCP server on http://127.0.0.1:8000 (MCP at
 curl -s http://127.0.0.1:8000/health
 ```
 
-`make data` is mandatory — with no index every tool returns `data_unavailable`. For
+`make data` is mandatory — with no index every tool returns `upstream_unavailable`. For
 Claude Desktop and other stdio hosts, `make mcp-serve` runs the stdio server instead.
 HTTP deployments enforce exact Host/Origin allowlists; see
 [deployment.md](docs/deployment.md#host--origin-allowlists) before putting one behind a

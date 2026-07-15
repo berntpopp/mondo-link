@@ -31,17 +31,34 @@ def test_modes_constants() -> None:
     assert shaping.DEFAULT_RESPONSE_MODE == "compact"
 
 
-def test_minimal_keeps_only_identity() -> None:
+def test_minimal_keeps_anchors_and_narrows_collections() -> None:
+    # minimal keeps anchors AND every populated collection, narrowing each row to its
+    # stable identifiers -- it NEVER deletes a collection (that would be a silent-empty).
     out = shaping.shape_disease(_record(), "minimal")
-    assert set(out) == {"mondo_id", "name"}
+    assert set(out) == {
+        "mondo_id",
+        "name",
+        "mondo_version",
+        "synonyms",
+        "subsets",
+        "parents",
+        "xrefs",
+    }
     assert out["mondo_id"] == "MONDO:0007739"
+    # rows narrowed to identifiers (detail dropped); the collection survives
+    assert out["parents"] == [{"mondo_id": "MONDO:0005559"}]
+    assert out["xrefs"] == {"OMIM": [{"object_id": "143100"}]}
+    # optional record-detail scalars are dropped
+    assert "definition" not in out and "obsolete" not in out
+    # empty collections are dropped (a strict subset of the default response)
+    assert "children" not in out and "consider" not in out
 
 
 def test_minimal_preserves_meta() -> None:
     rec = {**_record(), "_meta": {"x": 1}}
     out = shaping.shape_disease(rec, "minimal")
-    assert "_meta" in out
-    assert set(out) == {"mondo_id", "name", "_meta"}
+    assert out["_meta"] == {"x": 1}
+    assert {"mondo_id", "name", "_meta"} <= set(out)
 
 
 def test_compact_drops_empty_and_collapses_synonyms() -> None:

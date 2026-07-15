@@ -153,9 +153,12 @@ class ArgValidationMiddleware(Middleware):
     @staticmethod
     def _unknown_tool_result() -> ToolResult:
         envelope = build_unknown_tool_envelope()
+        # is_error=True: Response-Envelope v1 requires an error envelope to carry MCP
+        # isError so a client branching on it surfaces the failure to the model.
         return ToolResult(
             structured_content=envelope,
             content=[TextContent(type="text", text=json.dumps(envelope))],
+            is_error=True,
         )
 
     async def on_read_resource(
@@ -250,9 +253,12 @@ class ArgValidationMiddleware(Middleware):
         # NB: never log the raw `loc` -- an unknown argument NAME is caller-
         # controlled and can carry prose / forbidden code points.
         logger.warning("mcp_arg_error tool=%s type=%s", name, error_type)
+        # is_error=True: an argument-binding failure is an error envelope and must set
+        # MCP isError (Response-Envelope v1), else a client sees a "successful" bad call.
         return ToolResult(
             structured_content=envelope,
             content=[TextContent(type="text", text=json.dumps(envelope))],
+            is_error=True,
         )
 
 

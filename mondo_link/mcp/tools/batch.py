@@ -17,7 +17,6 @@ from mondo_link.exceptions import InvalidInputError
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, classify_exception, run_mcp_tool
 from mondo_link.mcp.next_commands import after_get_disease_batch, after_resolve_batch
-from mondo_link.mcp.schemas import BATCH_DISEASE_SCHEMA, BATCH_RESOLVE_SCHEMA
 from mondo_link.mcp.service_adapters import get_mondo_service
 from mondo_link.mcp.tools._common import FieldsArg, ResponseMode
 from mondo_link.mcp.untrusted_content import (
@@ -50,18 +49,28 @@ def register_batch_tools(mcp: FastMCP) -> None:
         name="resolve_disease_batch",
         title="Resolve Diseases (batch)",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=BATCH_RESOLVE_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "resolve", "batch"},
         description=(
             "Resolve many labels/ids/xrefs in one call (partial success: each item "
             "returns its resolution {mondo_id, name, match_type} or its own "
-            "ok=false/error_code/message; the call never fails wholesale). "
+            "ok=false/error_code/message; the call never fails wholesale). Every row "
+            "carries its `index` (0-based, 1:1 with the input) so results key back "
+            "uniformly regardless of ok. "
             f"Max {MAX_BATCH} items; compact per item. "
             "Signature: resolve_disease_batch(queries, response_mode=)."
         ),
     )
     async def resolve_disease_batch(
-        queries: Annotated[list[str], Field(description=f"1..{MAX_BATCH} labels/ids/xrefs.")],
+        queries: Annotated[
+            list[str],
+            Field(
+                description=f"1..{MAX_BATCH} disease labels/synonyms, MONDO ids, or xref CURIEs.",
+                min_length=1,
+                max_length=MAX_BATCH,
+                examples=[["Marfan syndrome", "MONDO:0009061", "OMIM:143100"]],
+            ),
+        ],
         response_mode: ResponseMode = "compact",
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
@@ -71,7 +80,10 @@ def register_batch_tools(mcp: FastMCP) -> None:
             for index, query in enumerate(queries):
                 try:
                     rec = svc.resolve_disease(query, response_mode=response_mode)
-                    results.append({**rec, "query": query, "ok": True})
+                    # `index` on EVERY row (success and failure) so a client keys results
+                    # back to inputs uniformly; a failure row omits the raw `query`
+                    # (unresolved input may carry prose the error surface must not echo).
+                    results.append({**rec, "index": index, "query": query, "ok": True})
                 except Exception as exc:  # per-item boundary; the call still succeeds
                     # `message` is a FIXED classified string and `index` (an int)
                     # correlates the failure to its 1:1-ordered input WITHOUT
@@ -95,18 +107,27 @@ def register_batch_tools(mcp: FastMCP) -> None:
         name="get_disease_batch",
         title="Get Diseases (batch)",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=BATCH_DISEASE_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "batch"},
         description=(
             "Fetch many disease records in one call (partial success per item: each "
             "row is the record or its own ok=false/error_code/message). Each term "
             "accepts a MONDO id, label, or xref CURIE; pass fields=[...] for a sparse "
-            f"projection. Max {MAX_BATCH} items; compact per item. "
+            "projection. Every row carries its `index` (0-based, 1:1 with the input). "
+            f"Max {MAX_BATCH} items; compact per item. "
             "Signature: get_disease_batch(terms, response_mode=, fields=)."
         ),
     )
     async def get_disease_batch(
-        terms: Annotated[list[str], Field(description=f"1..{MAX_BATCH} ids/labels/xrefs.")],
+        terms: Annotated[
+            list[str],
+            Field(
+                description=f"1..{MAX_BATCH} MONDO ids, disease labels/synonyms, or xref CURIEs.",
+                min_length=1,
+                max_length=MAX_BATCH,
+                examples=[["MONDO:0009061", "Marfan syndrome", "OMIM:143100"]],
+            ),
+        ],
         response_mode: ResponseMode = "compact",
         fields: FieldsArg = None,
     ) -> dict[str, Any]:
@@ -123,7 +144,8 @@ def register_batch_tools(mcp: FastMCP) -> None:
             for index, term in enumerate(terms):
                 try:
                     rec = svc.get_disease(term, response_mode=response_mode, fields=fields)
-                    results.append({**rec, "term": term, "ok": True})
+                    # `index` on every row for uniform keying (see resolve_disease_batch).
+                    results.append({**rec, "index": index, "term": term, "ok": True})
                     definition = rec.get("definition")
                     if isinstance(definition, dict) and definition.get("kind") == "untrusted_text":
                         fenced.append(UntrustedText.model_validate(definition))

@@ -9,7 +9,7 @@ and a returned (not raised) error envelope on failure.
 from __future__ import annotations
 
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, cast
 
 import pytest
 from fastmcp import FastMCP
@@ -193,7 +193,12 @@ async def tools(fake: FakeService) -> dict[str, Any]:
 
 
 async def _call(tools: dict[str, Any], name: str, **kwargs: Any) -> dict[str, Any]:
-    return await tools[name].fn(**kwargs)
+    result = await tools[name].fn(**kwargs)
+    # Success returns a dict; the error path returns a ToolResult carrying MCP
+    # isError:true (Response-Envelope v1) -- read its structured envelope either way.
+    if isinstance(result, dict):
+        return result
+    return cast("dict[str, Any]", result.structured_content)
 
 
 async def test_get_diagnostics(tools: dict[str, Any]) -> None:

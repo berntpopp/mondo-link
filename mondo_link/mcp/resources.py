@@ -50,10 +50,10 @@ MONDO_USAGE_NOTES = (
 )
 
 MONDO_REFERENCE_NOTES = (
-    "Error codes (7): invalid_input, not_found, ambiguous_query, data_unavailable, "
-    "rate_limited, upstream_unavailable, internal_error. match_type on "
+    "Error codes (6, closed enum): invalid_input, not_found, ambiguous_query, "
+    "upstream_unavailable, rate_limited, internal. match_type on "
     "resolve_disease is one of mondo_id | primary | exact_synonym | "
-    "related_synonym | xref (strongest first). Cross-references are ranked by "
+    "related_synonym | fuzzy | xref (strongest first). Cross-references are ranked by "
     "mapping predicate, strongest first: exactMatch > equivalentTo > closeMatch > "
     "narrowMatch > broadMatch > xref. First-class xref prefixes: OMIM, ORPHA, "
     "DOID, NCIT, UMLS, MESH, MEDGEN, SCTID, GARD. The local index is built from "

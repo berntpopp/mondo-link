@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal, get_args
+
 #: Bumped whenever the on-disk SQLite schema changes. v2 added xref.object_label
 #: (the target term's human-readable name, from SSSOM); a rebuild populates it.
 SCHEMA_VERSION = 2
@@ -18,8 +20,14 @@ NON_HUMAN_ANIMAL_ROOT = "MONDO:0005583"
 #: abuse). Surfaced in capabilities.limits and enforced by the batch tools.
 MAX_BATCH_ITEMS = 50
 
-#: Cross-ontology prefixes surfaced as first-class xref sources.
-XREF_PREFIXES = ("OMIM", "ORPHA", "DOID", "NCIT", "UMLS", "MESH", "MEDGEN", "SCTID", "GARD")
+#: Cross-ontology prefixes surfaced as first-class xref sources -- the CLOSED vocabulary
+#: ``map_cross_ontology.prefixes`` filters over. Declared as a ``Literal`` so an ``enum``
+#: appears in the tool's input schema and pydantic rejects an unrecognised source BEFORE
+#: the body runs (schema == runtime); the tuple is DERIVED from it, never a second copy.
+#: get_disease still surfaces every xref group (incl. ICD/EFO/...); only the map filter is
+#: constrained to this first-class set, so the schema never promises more than it accepts.
+XrefPrefix = Literal["OMIM", "ORPHA", "DOID", "NCIT", "UMLS", "MESH", "MEDGEN", "SCTID", "GARD"]
+XREF_PREFIXES: tuple[str, ...] = get_args(XrefPrefix)
 
 #: Mapping predicate -> rank for ordering cross-references (lower is stronger).
 PREDICATE_RANK = {
