@@ -52,6 +52,12 @@ FUZZY_SEARCH_POOL = FUZZY_MAX_CANDIDATES * 3
 #: candidate suggestions (so a query like "ADPKD 1" never dead-ends on a bare 404).
 _TOKEN_RE = re.compile(r"[A-Za-z]{3,}")
 
+#: A term the caller clearly INTENDED as a MONDO id (``MONDO:`` prefix) but that does
+#: not match the canonical grammar (``MONDO:`` + 7 digits). Such a value is a malformed
+#: id, not a missing disease -- it must be ``invalid_input`` (fix the format), never
+#: ``not_found`` (which tells the model the disease is absent, a different repair).
+_MONDO_ID_ATTEMPT_RE = re.compile(r"^MONDO:", re.IGNORECASE)
+
 
 def decide_fuzzy(
     hits: list[dict[str, Any]],
@@ -103,7 +109,7 @@ class Resolver:
         """Bind the resolver to a read-only Mondo repository."""
         self._repo = repo
 
-    def resolve_term_id(self, term: str) -> str:
+    def resolve_term_id(self, term: str, *, field: str = "term") -> str:
         """Resolve any MONDO id / label / xref CURIE to a canonical MONDO id.
 
         The strict (non-fuzzy) entry point: a free-text miss raises ``NotFoundError``
@@ -112,20 +118,31 @@ class Resolver:
         raw = (term or "").strip()
         if not raw:
             raise InvalidInputError(
-                "term must be a non-empty MONDO id, label, or xref.", field="term"
+                "term must be a non-empty MONDO id, label, or xref.", field=field
             )
-        return self.classify_resolution(raw, fuzzy=False)[1]
+        return self.classify_resolution(raw, fuzzy=False, field=field)[1]
 
-    def classify_resolution(self, raw: str, *, fuzzy: bool = True) -> tuple[str, str]:
+    def classify_resolution(
+        self, raw: str, *, fuzzy: bool = True, field: str = "term"
+    ) -> tuple[str, str]:
         """Resolve ``raw`` and report how the match was made (``match_type``).
 
-        Cascade: MONDO id (obsolete -> ``WithdrawnEntryError``) -> external xref
-        CURIE -> exact label/synonym. A multi-term exact label raises
+        Cascade: malformed-MONDO-id guard -> MONDO id (obsolete -> ``WithdrawnEntryError``)
+        -> external xref CURIE -> exact label/synonym. A multi-term exact label raises
         ``AmbiguousQueryError``. On an exact-label miss: when ``fuzzy`` is set (the
         ``resolve_disease`` entry) a conservative FTS fallback runs; otherwise (the
         strict ``resolve_term_id`` entry) ``NotFoundError`` is raised. Assumes ``raw``
         is already stripped and non-empty (the public entry points validate).
         """
+        # A value the caller intended as a MONDO id (``MONDO:`` prefix) that is not the
+        # canonical grammar is a malformed id -> invalid_input, distinct from the
+        # not_found returned for a well-formed-but-absent id. Without this it falls
+        # through to the xref branch (prefix "MONDO"), misses, and reports not_found --
+        # so the model cannot tell "you typo'd the format" from "that disease is absent".
+        if _MONDO_ID_ATTEMPT_RE.match(raw) and normalize_mondo_id(raw) is None:
+            raise InvalidInputError(
+                "Malformed MONDO id; expected 'MONDO:' followed by 7 digits.", field=field
+            )
         mondo_id = normalize_mondo_id(raw)
         if mondo_id:
             record = self._repo.get_term(mondo_id)

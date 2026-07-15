@@ -54,7 +54,9 @@ def default_error_next_commands(
     attacker-influenced text into an executable recovery suggestion. Recovery
     therefore routes to fixed, argument-free discovery commands only.
     """
-    if error_code == "data_unavailable":
+    if error_code == "upstream_unavailable":
+        # The local Mondo index is this server's only upstream; when it is unavailable
+        # (missing/building), get_diagnostics reports its build status.
         return [cmd("get_diagnostics")]
     return [cmd("get_server_capabilities")]
 

@@ -115,14 +115,31 @@ def _raiser(exc: BaseException) -> Callable[[], Awaitable[dict[str, Any]]]:
     return call
 
 
+def _error_env(result: Any) -> dict[str, Any]:
+    """The structured envelope from an error-path result.
+
+    Response-Envelope v1: the error path returns a ``ToolResult`` carrying MCP
+    ``isError: true`` (a bare dict could never set the protocol flag). Assert the
+    flag and hand back the structured envelope so the flat-frame checks still apply.
+    """
+    from fastmcp.tools.tool import ToolResult
+
+    assert isinstance(result, ToolResult)
+    assert result.is_error is True
+    assert isinstance(result.structured_content, dict)
+    return result.structured_content
+
+
 async def test_error_envelope_is_a_flat_dict_never_a_nested_error_object() -> None:
     """A tool-body exception is caught at the boundary and returned (never raised)
     as a FLAT `success: false` dict -- no nested `error: {...}` object anywhere.
     """
-    result = await run_mcp_tool(
-        "get_disease",
-        _raiser(NotFoundError("No matching Mondo record found.")),
-        context=McpErrorContext("get_disease", arguments={"term": "MONDO:9999999"}),
+    result = _error_env(
+        await run_mcp_tool(
+            "get_disease",
+            _raiser(NotFoundError("No matching Mondo record found.")),
+            context=McpErrorContext("get_disease", arguments={"term": "MONDO:9999999"}),
+        )
     )
 
     assert result["success"] is False
@@ -142,10 +159,12 @@ async def test_error_envelope_is_a_flat_dict_never_a_nested_error_object() -> No
 async def test_error_envelope_retryable_true_for_upstream_style_failures() -> None:
     """`retryable`/`recovery_action` are correctly typed booleans/enums, not prose,
     for the retryable branch of the taxonomy (data_unavailable -> retry_backoff)."""
-    result = await run_mcp_tool(
-        "get_disease",
-        _raiser(InvalidInputError("bad id", "term")),
-        context=McpErrorContext("get_disease", arguments={"term": "??"}),
+    result = _error_env(
+        await run_mcp_tool(
+            "get_disease",
+            _raiser(InvalidInputError("bad id", "term")),
+            context=McpErrorContext("get_disease", arguments={"term": "??"}),
+        )
     )
 
     assert result["success"] is False
@@ -160,14 +179,16 @@ async def test_error_meta_carries_unsafe_for_clinical_use_flag() -> None:
     `unsafe_for_clinical_use: True` (same guarantee as the success path), at
     every `response_mode`."""
     for response_mode in ("minimal", "compact", "standard", "full"):
-        result = await run_mcp_tool(
-            "get_disease",
-            _raiser(NotFoundError("No matching Mondo record found.")),
-            context=McpErrorContext(
+        result = _error_env(
+            await run_mcp_tool(
                 "get_disease",
-                arguments={"term": "MONDO:9999999"},
-                response_mode=response_mode,
-            ),
+                _raiser(NotFoundError("No matching Mondo record found.")),
+                context=McpErrorContext(
+                    "get_disease",
+                    arguments={"term": "MONDO:9999999"},
+                    response_mode=response_mode,
+                ),
+            )
         )
 
         assert result["success"] is False

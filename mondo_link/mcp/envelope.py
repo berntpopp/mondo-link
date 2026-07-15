@@ -8,14 +8,17 @@ message.
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import time
 import uuid
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
-from typing import Any, cast
+from typing import Any, Literal, cast, get_args
 
+from fastmcp.tools.tool import ToolResult
+from mcp.types import TextContent
 from pydantic import ValidationError as PydanticValidationError
 
 from mondo_link.exceptions import (
@@ -29,8 +32,9 @@ from mondo_link.exceptions import (
     WithdrawnEntryError,
 )
 from mondo_link.mcp import metrics
+from mondo_link.mcp.envelope_sanitize import sanitize_tree, valid_id_entries
 from mondo_link.mcp.next_commands import cmd, default_error_next_commands
-from mondo_link.mcp.untrusted_content import UntrustedTextLimitError, sanitize_message
+from mondo_link.mcp.untrusted_content import UntrustedTextLimitError
 from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
 logger = logging.getLogger(__name__)
@@ -43,10 +47,35 @@ logger = logging.getLogger(__name__)
 # standard (Response-Envelope Standard v1) and is therefore untiered: it is
 # emitted on every call, success or error, at every response_mode -- including
 # `minimal`.
-_RETRYABLE = {"rate_limited", "upstream_unavailable", "data_unavailable"}
+_RETRYABLE = {"rate_limited", "upstream_unavailable"}
 #: Fleet-wide disclaimer emitted verbatim in every per-call `_meta` (all
 #: response_modes, success and error paths). See Response-Envelope Standard v1.
 _UNSAFE_FOR_CLINICAL_USE = True
+
+#: The CLOSED error_code enum (Response-Envelope Standard v1). Nothing outside this set
+#: may reach the wire; a non-canonical code (e.g. a raised ``McpToolError`` carrying
+#: ``data_unavailable``, or any per-item batch code) is coerced onto it, so the enum can
+#: never drift -- and the type lets mypy catch a bad literal at the raise site.
+ErrorCode = Literal[
+    "invalid_input",
+    "not_found",
+    "ambiguous_query",
+    "upstream_unavailable",
+    "rate_limited",
+    "internal",
+]
+_ERROR_CODES: frozenset[str] = frozenset(get_args(ErrorCode))
+#: Legacy codes folded onto the canon: the local index is this server's only upstream.
+_ERROR_CODE_ALIASES: dict[str, str] = {
+    "data_unavailable": "upstream_unavailable",
+    "internal_error": "internal",
+}
+
+
+def canon_error_code(code: str) -> ErrorCode:
+    """Coerce any code to the closed enum (alias-map first, else ``internal``)."""
+    mapped = _ERROR_CODE_ALIASES.get(code, code)
+    return cast("ErrorCode", mapped) if mapped in _ERROR_CODES else "internal"
 
 
 @dataclass
@@ -61,9 +90,13 @@ class McpErrorContext:
 
 
 class McpToolError(Exception):
-    """Raised inside a tool body to emit a specific error code/message."""
+    """Raised inside a tool body to emit a specific error code/message.
 
-    def __init__(self, *, error_code: str, message: str) -> None:
+    ``error_code`` is typed to the closed :data:`ErrorCode` enum so mypy rejects a
+    non-canonical literal at the raise site; ``_classify`` also coerces it defensively.
+    """
+
+    def __init__(self, *, error_code: ErrorCode, message: str) -> None:
         """Store an error code and client-safe message."""
         super().__init__(message)
         self.error_code = error_code
@@ -91,6 +124,11 @@ def _capabilities_version() -> str | None:
 # caller-visible message: the actionable specifics ride the structured envelope
 # fields (`field`, `allowed_values`, `candidates`, `replaced_by`, ...), and the raw
 # detail stays only in the chained exception cause (server-side logs, class name).
+# Keyed by the CLOSED error_code enum (Response-Envelope Standard v1): invalid_input,
+# not_found, ambiguous_query, upstream_unavailable, rate_limited, internal. The local
+# Mondo index is this server's only "upstream", so a missing/building index is an
+# ``upstream_unavailable`` (retryable); ``data_unavailable``/``internal_error`` are NOT
+# in the enum. ``unknown_tool``/``obsolete``/``limit_exceeded`` are message keys only.
 _FIXED_MESSAGES: dict[str, str] = {
     "not_found": "No matching Mondo record was found for the request.",
     "unknown_tool": "Unknown tool. Call get_server_capabilities to list the valid tools.",
@@ -98,13 +136,12 @@ _FIXED_MESSAGES: dict[str, str] = {
     "ambiguous_query": "The query matched multiple Mondo terms; pick one from candidates.",
     "invalid_input": "The request arguments were invalid; check the field and retry.",
     "limit_exceeded": "Response exceeded the untrusted-text size/count limit.",
-    "data_unavailable": (
-        "The local Mondo database is not available (it may be building). "
+    "rate_limited": "Upstream rate limit hit. Retry shortly.",
+    "upstream_unavailable": (
+        "The Mondo data source is temporarily unavailable (it may be rebuilding). "
         "Retry shortly or call get_diagnostics."
     ),
-    "rate_limited": "Upstream rate limit hit. Retry shortly.",
-    "upstream_unavailable": "The upstream is temporarily unavailable.",
-    "internal_error": "An internal error occurred. The request was not completed.",
+    "internal": "An internal error occurred. The request was not completed.",
 }
 
 #: An argument NAME is echoed back to the caller ONLY when it is a plain
@@ -113,48 +150,8 @@ _FIXED_MESSAGES: dict[str, str] = {
 #: (caller-controlled, unknown) argument name is redacted, never echoed verbatim.
 _SAFE_ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}$")
 
-#: Canonical MONDO id grammar. Caller-visible identifier echoes (candidates,
-#: replaced_by, next_commands arguments) are surfaced ONLY when they match this,
-#: so an upstream/exception label can never smuggle prose through them.
-_MONDO_ID_RE = re.compile(r"^MONDO:\d{7}$")
 #: Closed enum for the withdrawn/obsolete status surfaced on the envelope.
 _WITHDRAWN_STATUSES = frozenset({"obsolete", "deprecated", "merged", "retired"})
-
-
-def _valid_id_entries(entries: Any) -> list[dict[str, str]]:
-    """Project candidate/suggestion/replacement entries to validated ids ONLY.
-
-    Each entry's free-text ``name`` (upstream ontology prose) is dropped; only a
-    grammar-validated ``mondo_id`` survives, so no exception-carried prose reaches
-    a caller-visible structured field. Non-conforming entries are omitted.
-    """
-    out: list[dict[str, str]] = []
-    if not isinstance(entries, list):
-        return out
-    for entry in entries:
-        mondo_id = entry.get("mondo_id") if isinstance(entry, dict) else None
-        if isinstance(mondo_id, str) and _MONDO_ID_RE.match(mondo_id):
-            out.append({"mondo_id": mondo_id})
-    return out
-
-
-def _sanitize_tree(value: Any) -> Any:
-    """Recursively code-point-strip every string leaf of a built error envelope.
-
-    A last-step backstop ON TOP OF the fixed-message/redaction discipline: it
-    strips the forbidden control/zero-width/bidi/NUL code points from every string
-    (message, field, allowed_values, hint, candidates[*].name, replaced_by,
-    ``_meta.next_commands[*].arguments.*`` -- the caller's own query echoed into a
-    recovery step) without reshaping the structure. It does not make prose safe;
-    prose is kept safe by never interpolating attacker-influenced text above.
-    """
-    if isinstance(value, str):
-        return sanitize_message(value)
-    if isinstance(value, dict):
-        return {key: _sanitize_tree(item) for key, item in value.items()}
-    if isinstance(value, list):
-        return [_sanitize_tree(item) for item in value]
-    return value
 
 
 def _classify(exc: BaseException) -> tuple[str, str]:
@@ -166,16 +163,15 @@ def _classify(exc: BaseException) -> tuple[str, str]:
     it is passed through the code-point backstop only.
     """
     if isinstance(exc, McpToolError):
-        # Map the code to a FIXED public message: an arbitrary author-supplied
-        # (or caller-influenced) message is not safe even code-point-stripped.
-        return exc.error_code, _FIXED_MESSAGES.get(
-            exc.error_code, _FIXED_MESSAGES["internal_error"]
-        )
+        # Coerce the code onto the CLOSED enum (a raised McpToolError could still carry
+        # a legacy/non-canonical string at runtime) and map it to a FIXED public message
+        # -- an arbitrary author-/caller-influenced message is not safe even scrubbed.
+        code = canon_error_code(exc.error_code)
+        return code, _FIXED_MESSAGES.get(code, _FIXED_MESSAGES["internal"])
     if isinstance(exc, UntrustedTextLimitError):
-        # v1.1 response-limit breach: an explicit, typed limit error -- NOT a
-        # masked internal_error. The standard forbids silently omitting fenced
-        # content over a ceiling, so the whole response fails loudly and the
-        # caller can retry with a narrower request (smaller limit / minimal mode).
+        # v1.1 response-limit breach: an explicit, typed limit error (the standard
+        # forbids silently omitting fenced content over a ceiling), not a masked
+        # internal error -- the caller retries with a narrower request.
         return "invalid_input", _FIXED_MESSAGES["limit_exceeded"]
     if isinstance(exc, WithdrawnEntryError):  # NotFoundError subclass; obsolete term
         return "not_found", _FIXED_MESSAGES["obsolete"]
@@ -185,17 +181,16 @@ def _classify(exc: BaseException) -> tuple[str, str]:
         return "ambiguous_query", _FIXED_MESSAGES["ambiguous_query"]
     if isinstance(exc, InvalidInputError):
         return "invalid_input", _FIXED_MESSAGES["invalid_input"]
-    if isinstance(exc, DataUnavailableError):
-        return "data_unavailable", _FIXED_MESSAGES["data_unavailable"]
+    if isinstance(exc, DataUnavailableError | ServiceUnavailableError | DownloadError):
+        # The local index is this server's only upstream -> upstream_unavailable.
+        return "upstream_unavailable", _FIXED_MESSAGES["upstream_unavailable"]
     if isinstance(exc, RateLimitError):
         return "rate_limited", _FIXED_MESSAGES["rate_limited"]
-    if isinstance(exc, ServiceUnavailableError | DownloadError):
-        return "upstream_unavailable", _FIXED_MESSAGES["upstream_unavailable"]
     if isinstance(exc, PydanticValidationError):
         # Map to a fixed reason; the pydantic `msg` can echo the rejected input
         # and the `loc`/field name is caller-controlled -- neither is interpolated.
         return "invalid_input", _FIXED_MESSAGES["invalid_input"]
-    return "internal_error", _FIXED_MESSAGES["internal_error"]
+    return "internal", _FIXED_MESSAGES["internal"]
 
 
 def classify_exception(exc: BaseException) -> tuple[str, str]:
@@ -218,7 +213,7 @@ def _recovery_action(error_code: str) -> str:
 
 def _error_envelope(exc: BaseException, context: McpErrorContext) -> dict[str, Any]:
     """Build the structured error envelope, then run the recursive code-point pass."""
-    return cast(dict[str, Any], _sanitize_tree(_build_error_envelope(exc, context)))
+    return cast(dict[str, Any], sanitize_tree(_build_error_envelope(exc, context)))
 
 
 def _build_error_envelope(exc: BaseException, context: McpErrorContext) -> dict[str, Any]:
@@ -250,7 +245,7 @@ def _build_error_envelope(exc: BaseException, context: McpErrorContext) -> dict[
                 envelope["allowed_values"] = allowed
         # exc.hint is free-form prose and is never surfaced from the exception.
     if isinstance(exc, AmbiguousQueryError) and exc.candidates:
-        candidates = _valid_id_entries(exc.candidates)
+        candidates = valid_id_entries(exc.candidates)
         if candidates:
             envelope["candidates"] = candidates
         envelope["_meta"]["next_commands"] = [
@@ -258,7 +253,7 @@ def _build_error_envelope(exc: BaseException, context: McpErrorContext) -> dict[
         ] or [cmd("get_server_capabilities")]
         return envelope
     if isinstance(exc, WithdrawnEntryError):
-        replaced_by = _valid_id_entries(exc.replaced_by)
+        replaced_by = valid_id_entries(exc.replaced_by)
         envelope["obsolete"] = True
         envelope["withdrawn_status"] = (
             exc.withdrawn_status if exc.withdrawn_status in _WITHDRAWN_STATUSES else "obsolete"
@@ -269,7 +264,7 @@ def _build_error_envelope(exc: BaseException, context: McpErrorContext) -> dict[
         ] or [cmd("get_server_capabilities")]
         return envelope
     if isinstance(exc, NotFoundError) and exc.suggestions:
-        candidates = _valid_id_entries(exc.suggestions)
+        candidates = valid_id_entries(exc.suggestions)
         if candidates:
             envelope["candidates"] = candidates
         envelope["_meta"]["next_commands"] = [
@@ -319,7 +314,7 @@ def build_arg_error_envelope(
         message = f"Invalid value for argument {name_ref} of {tool_name}: {human}."
         return cast(
             dict[str, Any],
-            _sanitize_tree(
+            sanitize_tree(
                 {
                     "success": False,
                     "error_code": "invalid_input",
@@ -343,7 +338,7 @@ def build_arg_error_envelope(
     message = f"{head}{dym} Valid argument names are listed in allowed_values."
     return cast(
         dict[str, Any],
-        _sanitize_tree(
+        sanitize_tree(
             {
                 "success": False,
                 "error_code": "invalid_input",
@@ -370,7 +365,7 @@ def build_unknown_tool_envelope() -> dict[str, Any]:
     """
     return cast(
         dict[str, Any],
-        _sanitize_tree(
+        sanitize_tree(
             {
                 "success": False,
                 "error_code": "not_found",
@@ -424,13 +419,29 @@ def _shape_meta(meta: dict[str, Any], response_mode: str) -> dict[str, Any]:
     return {k: v for k, v in meta.items() if k != "elapsed_ms"}
 
 
+def error_result(envelope: dict[str, Any]) -> ToolResult:
+    """Wrap an error envelope so it carries BOTH the structure AND MCP ``isError``.
+
+    Response-Envelope v1: *"isError: true is REQUIRED so clients surface the error to the
+    model."* A tool that RETURNS a dict can never set it (so every error was delivered as
+    a SUCCESSFUL call carrying ``success: false``); raising sets ``isError`` but discards
+    ``structuredContent``. A ``ToolResult`` is the only shape giving both -- the
+    TextContent mirror is kept in step with ``structured_content``.
+    """
+    return ToolResult(
+        structured_content=envelope,
+        content=[TextContent(type="text", text=json.dumps(envelope))],
+        is_error=True,
+    )
+
+
 async def run_mcp_tool(
     tool_name: str,
     call: Callable[[], Awaitable[dict[str, Any]]],
     *,
     context: McpErrorContext | None = None,
-) -> dict[str, Any]:
-    """Execute a tool body, returning the result dict or a structured error dict."""
+) -> dict[str, Any] | ToolResult:
+    """Execute a tool body: the result dict on success, or an ``isError`` ToolResult."""
     ctx = context or McpErrorContext(tool_name=tool_name)
     start = time.perf_counter()
     try:
@@ -449,6 +460,12 @@ async def run_mcp_tool(
             _stamp_capabilities_version(meta)
             result["_meta"] = _shape_meta(meta, ctx.response_mode)
             metrics.record(tool_name, elapsed, ok=success)
+            if not success:
+                # A body that RETURNS an error envelope (not raises) must ALSO carry MCP
+                # isError -- otherwise it slips through as a bare dict with isError:false,
+                # the exact fleet-wide bug. Wrap it at the chokepoint so every error
+                # surface is covered, whichever path built it.
+                return error_result(result)
         return result
     except Exception as exc:  # broad catch is the error-boundary contract
         elapsed = int((time.perf_counter() - start) * 1000)
@@ -463,4 +480,4 @@ async def run_mcp_tool(
             envelope["error_code"],
             exc.__class__.__name__,
         )
-        return envelope
+        return error_result(envelope)

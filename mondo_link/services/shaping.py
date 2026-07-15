@@ -2,14 +2,19 @@
 
 ``standard`` / ``full`` are the identity (the complete record, with structured
 synonyms carrying scope/type/sources). ``compact`` (the default) drops null/empty
-values and collapses synonyms to plain strings. ``minimal`` keeps only the
-identity anchors (``mondo_id`` + ``name``).
+values and collapses synonyms to plain strings. ``minimal`` keeps the identity
+anchors AND every populated collection -- narrowed to its rows' stable identifiers.
+It NEVER deletes a collection: a mode that turned N records into zero would be a
+silent-empty by another name (Response-Envelope v1: minimal is "the mandatory
+envelope plus stable identifiers", identifiers explicitly retained).
 """
 
 from __future__ import annotations
 
 import re
 from typing import Any
+
+from mondo_link.exceptions import InvalidInputError
 
 RESPONSE_MODES: list[str] = ["minimal", "compact", "standard", "full"]
 DEFAULT_RESPONSE_MODE = "compact"
@@ -25,18 +30,69 @@ _WS_RUN_RE = re.compile(r"\s+")
 
 _PRESERVE_KEYS: frozenset[str] = frozenset({"_meta", "success"})
 
-#: Identity anchors kept in ``minimal`` mode.
-_MINIMAL_KEEP: frozenset[str] = frozenset({"mondo_id", "name", "_meta"})
+#: Identity/grounding anchors always retained (minimal + a sparse fieldset).
+_ANCHORS: frozenset[str] = frozenset({"mondo_id", "name", "mondo_version"})
+_FIELD_ANCHORS: frozenset[str] = _ANCHORS | _PRESERVE_KEYS
 
-#: Identity/grounding anchors a sparse fieldset always retains.
-_FIELD_ANCHORS: frozenset[str] = frozenset(
-    {"mondo_id", "name", "mondo_version", "_meta", "success"}
+#: Stable identifier fields per collection key: ``minimal`` narrows each row in a
+#: collection to these, so the collection survives but its per-row DETAIL is dropped.
+_ROW_IDENTIFIERS: dict[str, tuple[str, ...]] = {
+    "parents": ("mondo_id",),
+    "children": ("mondo_id",),
+    "top_groupings": ("mondo_id",),
+    "ancestors": ("mondo_id",),
+    "descendants": ("mondo_id",),
+    "results": ("mondo_id",),
+    "matches": ("mondo_id",),
+    "xrefs": ("object_id",),  # grouped {prefix: [{object_id, ...}]}
+    "mappings": ("object_id",),
+}
+
+#: Collections whose rows are bare scalars (a list of strings); kept verbatim.
+_SCALAR_COLLECTIONS: frozenset[str] = frozenset({"synonyms", "subsets", "consider"})
+
+#: Envelope STRUCTURE (counts/pagination echoes), always retained at ``minimal`` --
+#: dropping ``count``/``total`` is what makes a discarded payload indistinguishable
+#: from an empty one.
+_STRUCTURAL_KEYS: frozenset[str] = frozenset(
+    {"count", "total", "returned", "limit", "offset", "next_offset", "truncated", "prefixes_filter"}
 )
 
 
 def _is_empty(value: Any) -> bool:
     """True for the null/empty values compact mode drops."""
     return value is None or value == [] or value == "" or value == {}
+
+
+def _is_collection(value: Any) -> bool:
+    """True for the two collection shapes: a list, or an object grouping lists."""
+    if isinstance(value, list):
+        return True
+    return (
+        isinstance(value, dict) and bool(value) and all(isinstance(v, list) for v in value.values())
+    )
+
+
+def _project_row(row: Any, identifiers: tuple[str, ...] | None) -> Any:
+    """Narrow ONE record to its stable identifiers (fails open when unregistered)."""
+    if not isinstance(row, dict) or identifiers is None:
+        return row
+    return {k: row[k] for k in identifiers if k in row and not _is_empty(row[k])}
+
+
+def _project_records(key: str, value: Any) -> Any:
+    """Narrow every record in a collection; the collection itself always survives.
+
+    Handles a plain list of rows and a grouped object (``{"OMIM": [row, …]}``).
+    """
+    if key in _SCALAR_COLLECTIONS:
+        return value
+    identifiers = _ROW_IDENTIFIERS.get(key)
+    if isinstance(value, list):
+        return [_project_row(row, identifiers) for row in value]
+    if isinstance(value, dict) and all(isinstance(v, list) for v in value.values()):
+        return {g: [_project_row(row, identifiers) for row in rows] for g, rows in value.items()}
+    return value
 
 
 def _plain_synonyms(synonyms: Any) -> list[str]:
@@ -51,15 +107,32 @@ def _plain_synonyms(synonyms: Any) -> list[str]:
     return out
 
 
+def _shape_minimal(record: dict[str, Any]) -> dict[str, Any]:
+    """Anchors + every count + every POPULATED collection (rows narrowed to ids).
+
+    Drops optional record-detail scalars (``definition``, ``obsolete``, …) and empty
+    collections, so ``minimal`` is a strict subset of the default -- but it can never
+    turn a record's collection into nothing.
+    """
+    keep = _ANCHORS | _PRESERVE_KEYS | _STRUCTURAL_KEYS
+    shaped: dict[str, Any] = {}
+    for key, value in record.items():
+        if key in keep:
+            shaped[key] = value
+        elif _is_collection(value) and not _is_empty(value):
+            shaped[key] = _project_records(key, value)
+    return shaped
+
+
 def shape_disease(record: dict[str, Any], mode: str) -> dict[str, Any]:
     """Project a disease record to the requested verbosity.
 
-    - ``minimal``: ``mondo_id`` + ``name`` (and any preserved keys).
+    - ``minimal``: anchors + every count + every collection (rows narrowed to ids).
     - ``compact``: drop null/empty, collapse synonyms to plain strings.
     - ``standard`` / ``full``: the complete record incl. structured synonyms.
     """
     if mode == "minimal":
-        return {k: v for k, v in record.items() if k in _MINIMAL_KEEP}
+        return _shape_minimal(record)
     if mode in ("standard", "full"):
         return dict(record)
     out: dict[str, Any] = {}
@@ -70,6 +143,27 @@ def shape_disease(record: dict[str, Any], mode: str) -> dict[str, Any]:
             continue
         out[key] = value
     return out
+
+
+def validate_fields(payload: dict[str, Any], fields: list[str] | None) -> None:
+    """Reject a ``fields`` projection naming a key the record does not have.
+
+    ``fields`` is an open-world projection (its valid values are the record's own keys),
+    so it cannot be a static schema ``enum``. But an unrecognised field was silently
+    skipped, so ``fields=["__bogus__"]`` returned just the anchors with ``success:true``
+    -- the same silent-empty class as an unrecognised filter, forbidden by
+    Response-Envelope v1.1. Validate the RAW field roots against the built record's keys.
+    """
+    if not fields:
+        return
+    projectable = [k for k in payload if k not in _PRESERVE_KEYS]
+    unknown = sorted({f.partition(".")[0] for f in fields} - set(projectable))
+    if unknown:
+        raise InvalidInputError(
+            "fields references key(s) this record does not have; project its own keys only.",
+            field="fields",
+            allowed=sorted(projectable),
+        )
 
 
 def shape_hit(hit: dict[str, Any], mode: str) -> dict[str, Any]:

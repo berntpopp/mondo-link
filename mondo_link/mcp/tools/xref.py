@@ -9,9 +9,8 @@ from pydantic import Field
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
 from mondo_link.mcp.next_commands import after_cross_ontology, after_resolve_xref
-from mondo_link.mcp.schemas import CROSS_ONTOLOGY_SCHEMA, RESOLVE_XREF_SCHEMA
 from mondo_link.mcp.service_adapters import get_mondo_service
-from mondo_link.mcp.tools._common import FieldsArg, ResponseMode, TermStr, XrefIdStr
+from mondo_link.mcp.tools._common import PrefixesArg, ResponseMode, TermStr, XrefIdStr
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -24,7 +23,7 @@ def register_xref_tools(mcp: FastMCP) -> None:
         name="resolve_xref",
         title="Resolve Cross-Reference",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=RESOLVE_XREF_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"xref", "resolve"},
         description=(
             "Resolve an external cross-reference CURIE (OMIM/Orphanet/DOID/NCIT/UMLS/"
@@ -63,32 +62,25 @@ def register_xref_tools(mcp: FastMCP) -> None:
         name="map_cross_ontology",
         title="Map Cross-Ontology",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=CROSS_ONTOLOGY_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"xref"},
         description=(
-            "List a Mondo term's cross-references to other ontologies, grouped by "
-            "target prefix (OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD), each "
-            "with its mapping predicate and origin (obo_xref|sssom). Optionally "
-            "restrict to a subset of prefixes, or pass fields=['mappings.OMIM'] for a "
-            "sparse projection. "
-            "Signature: map_cross_ontology(term, prefixes=, response_mode=, fields=)."
+            "List a Mondo term's cross-references to other ontologies, grouped by target "
+            "prefix. get_disease surfaces every source; this tool's `prefixes` filter is "
+            "the first-class set (OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD), each "
+            "with its mapping predicate and origin (obo_xref|sssom). An unrecognised prefix "
+            "is rejected with invalid_input. "
+            "Signature: map_cross_ontology(term, prefixes=, response_mode=)."
         ),
     )
     async def map_cross_ontology(
         term: TermStr,
-        prefixes: Annotated[
-            list[str] | None,
-            Field(
-                description="Restrict to these target prefixes, e.g. ['OMIM','ORPHA'].",
-                examples=[["OMIM", "ORPHA"]],
-            ),
-        ] = None,
+        prefixes: PrefixesArg = None,
         response_mode: ResponseMode = "compact",
-        fields: FieldsArg = None,
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().map_cross_ontology(
-                term, prefixes=prefixes, response_mode=response_mode, fields=fields
+                term, prefixes=prefixes, response_mode=response_mode
             )
             payload.setdefault("_meta", {})["next_commands"] = after_cross_ontology(payload)
             return payload

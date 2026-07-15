@@ -11,6 +11,8 @@ from typing import Any
 
 import pytest
 
+from mondo_link.constants import MAX_BATCH_ITEMS
+
 pytestmark = pytest.mark.mcp
 
 _SGS = "MONDO:0008426"
@@ -32,18 +34,38 @@ async def test_resolve_batch_partial_success(facade: Any) -> None:
     assert payload["_meta"]["next_commands"][0]["tool"] == "get_disease"
 
 
+def _err_env(result: Any) -> dict[str, Any]:
+    """Structured envelope from an error-path result (ToolResult with isError:true)."""
+    if isinstance(result, dict):
+        return result
+    assert result.is_error is True
+    return result.structured_content  # type: ignore[no-any-return]
+
+
 async def test_resolve_batch_rejects_oversize(facade: Any) -> None:
     tool = await _tool(facade, "resolve_disease_batch")
-    payload = await tool.fn(queries=["x"] * 51)
+    payload = _err_env(await tool.fn(queries=["x"] * 51))
     assert payload["success"] is False
     assert payload["error_code"] == "invalid_input"
+    assert payload["field"] == "queries"
 
 
 async def test_resolve_batch_rejects_empty(facade: Any) -> None:
     tool = await _tool(facade, "resolve_disease_batch")
-    payload = await tool.fn(queries=[])
+    payload = _err_env(await tool.fn(queries=[]))
     assert payload["success"] is False
     assert payload["error_code"] == "invalid_input"
+    assert payload["field"] == "queries"
+
+
+async def test_resolve_batch_cap_declared_in_schema(facade: Any) -> None:
+    # D4: the 1..50 cap is DECLARED (minItems/maxItems), so a validating client
+    # pre-checks and an over-cap call is rejected with a named constraint, not the
+    # generic opaque message the cap used to trip.
+    tool = await _tool(facade, "resolve_disease_batch")
+    schema = tool.parameters["properties"]["queries"]
+    assert schema["minItems"] == 1
+    assert schema["maxItems"] == MAX_BATCH_ITEMS
 
 
 async def test_get_disease_batch_mixed(facade: Any) -> None:

@@ -6,6 +6,8 @@ from typing import Annotated, Literal
 
 from pydantic import Field
 
+from mondo_link.constants import XrefPrefix
+
 ResponseMode = Annotated[
     Literal["minimal", "compact", "standard", "full"],
     Field(description="Verbosity: minimal|compact|standard|full (default compact)."),
@@ -45,5 +47,20 @@ FieldsArg = Annotated[
         "object, e.g. 'xrefs.OMIM'). Identity anchors (mondo_id, name, mondo_version) are "
         "always included. Omit for the full payload.",
         examples=[["xrefs.OMIM"], ["definition", "parents"]],
+    ),
+]
+
+#: A CLOSED array vocabulary: the item type is ``XrefPrefix`` (a ``Literal``), so an
+#: ``enum`` appears under ``items`` in the advertised schema and pydantic rejects an
+#: unrecognised or blank source (e.g. ``["ICD10CM"]`` / ``[" "]``) with invalid_input
+#: BEFORE the tool body -- never schema-valid-but-runtime-rejected, and never silently
+#: matching nothing.
+PrefixesArg = Annotated[
+    list[XrefPrefix] | None,
+    Field(
+        description="Restrict to these first-class cross-reference sources "
+        "(OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD). An unrecognised prefix is "
+        "rejected with invalid_input. Omit to return every source.",
+        examples=[["OMIM", "ORPHA"], ["DOID"]],
     ),
 ]

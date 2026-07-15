@@ -9,8 +9,10 @@ silently collapsing ambiguity.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from mondo_link.constants import XREF_PREFIXES
 from mondo_link.exceptions import InvalidInputError, NotFoundError
 from mondo_link.identifiers import normalize_xref
 from mondo_link.mcp.untrusted_content import (
@@ -25,6 +27,7 @@ from mondo_link.services.shaping import (
     select_fields,
     shape_disease,
     shape_search_hit,
+    validate_fields,
 )
 
 if TYPE_CHECKING:
@@ -160,7 +163,7 @@ class MondoService:
             raise InvalidInputError(
                 "query must be a non-empty MONDO id, label, or xref.", field="query"
             )
-        match_type, mondo_id = self._resolution.classify_resolution(raw)
+        match_type, mondo_id = self._resolution.classify_resolution(raw, field="query")
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
             raise NotFoundError(f"No Mondo term for {mondo_id}.")
@@ -172,6 +175,14 @@ class MondoService:
             "obsolete": record["is_obsolete"],
             "mondo_version": self._mondo_version(),
         }
+        # standard/full carry the fenced definition too, so response_mode meaningfully
+        # widens the top-level payload (and a standard resolve can skip a get_disease
+        # round trip when the label alone is enough). compact/minimal stay lean.
+        if response_mode in ("standard", "full"):
+            definition = _fence_definition(record["definition"], mondo_id=mondo_id)
+            if definition is not None:
+                out["definition"] = definition
+                enforce_untrusted_text_limits([UntrustedText.model_validate(definition)])
         if record["replaced_by"]:
             out["replaced_by"] = record["replaced_by"]
         return out
@@ -235,6 +246,10 @@ class MondoService:
             "xrefs": self._grouped_xrefs(mondo_id),
             "mondo_version": self._mondo_version(),
         }
+        # Reject an unknown fields root against the FULL record (before shaping), so
+        # fields=["__bogus__"] is invalid_input naming the projectable keys -- not a
+        # silent anchors-only success (Response-Envelope v1.1).
+        validate_fields(payload, fields)
         final = select_fields(shape_disease(payload, response_mode), fields)
         # Enforce limits over the fenced objects the FINAL response actually
         # emits: minimal mode / a sparse fieldset may project the definition
@@ -392,16 +407,31 @@ class MondoService:
         self,
         term: str,
         *,
-        prefixes: list[str] | None = None,
+        prefixes: Sequence[str] | None = None,
         response_mode: str = DEFAULT_RESPONSE_MODE,
-        fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Return all cross-ontology mappings for a term, grouped by prefix."""
         mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
-        normalized = [p.strip().upper() for p in prefixes if p.strip()] if prefixes else None
+        normalized: list[str] | None = None
+        if prefixes is not None:
+            # Validate the RAW values BEFORE normalising. Stripping first would turn a
+            # blank/whitespace prefix into "" and drop it, so `prefixes=[" "]` would
+            # silently become an unfiltered call returning EVERY source -- the same
+            # silent-omission bug (Response-Envelope v1.1). A blank or unrecognised
+            # source is invalid_input, not a no-op. (The tool schema also enforces the
+            # closed enum at the MCP layer; this guards direct/service callers.)
+            valid = {p.upper() for p in XREF_PREFIXES}
+            unknown = sorted({p for p in prefixes if p.strip().upper() not in valid})
+            if unknown:
+                raise InvalidInputError(
+                    "prefixes references unknown cross-reference source(s).",
+                    field="prefixes",
+                    allowed=list(XREF_PREFIXES),
+                )
+            normalized = [p.strip().upper() for p in prefixes]
         mappings = self._grouped_xrefs(mondo_id, normalized)
-        payload = {
+        return {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,
             "mappings": mappings,
@@ -409,4 +439,3 @@ class MondoService:
             "prefixes_filter": normalized,
             "mondo_version": self._mondo_version(),
         }
-        return select_fields(payload, fields)

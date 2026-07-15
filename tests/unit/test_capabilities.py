@@ -9,10 +9,9 @@ _ERROR_CODES = [
     "invalid_input",
     "not_found",
     "ambiguous_query",
-    "data_unavailable",
-    "rate_limited",
     "upstream_unavailable",
-    "internal_error",
+    "rate_limited",
+    "internal",
 ]
 
 
@@ -52,7 +51,7 @@ def test_build_capabilities_core_keys_present() -> None:
     assert payload["default_response_mode"] == "compact"
 
 
-def test_error_codes_are_the_seven_code_taxonomy() -> None:
+def test_error_codes_are_the_closed_six_code_taxonomy() -> None:
     assert cap.build_capabilities()["error_codes"] == _ERROR_CODES
 
 
