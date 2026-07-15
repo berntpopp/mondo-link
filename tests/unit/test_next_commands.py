@@ -145,7 +145,7 @@ def test_default_error_next_commands() -> None:
     _assert_steps(
         nc.default_error_next_commands("resolve_xref", "not_found", {"xref_id": "OMIM:1"})
     )
-    _assert_steps(nc.default_error_next_commands("get_disease", "data_unavailable", {}))
+    _assert_steps(nc.default_error_next_commands("get_disease", "upstream_unavailable", {}))
     _assert_steps(
         nc.default_error_next_commands("get_disease", "not_found", {"term": "OMIM:182212"})
     )
@@ -183,7 +183,7 @@ def test_default_error_recovery_never_echoes_caller_input() -> None:
         steps = nc.default_error_next_commands(tool, "not_found", {"term": "OMIM:182212"})
         _assert_steps(steps)
         assert steps == [{"tool": "get_server_capabilities", "arguments": {}}], (tool, steps)
-    # data_unavailable routes to diagnostics (still argument-free)
-    assert nc.default_error_next_commands("get_disease", "data_unavailable", {"term": "x"}) == [
+    # upstream_unavailable (the local index is the only upstream) routes to diagnostics
+    assert nc.default_error_next_commands("get_disease", "upstream_unavailable", {"term": "x"}) == [
         {"tool": "get_diagnostics", "arguments": {}}
     ]

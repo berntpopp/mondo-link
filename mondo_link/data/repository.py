@@ -122,22 +122,44 @@ class MondoRepository:
     def search(
         self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
     ) -> tuple[list[dict[str, Any]], int]:
-        """Full-text search over name/synonyms/definition; returns ``(rows, total)``."""
+        """Full-text search over name/synonyms/definition; returns ``(rows, total)``.
+
+        Ranking is NOT raw bm25. Two priors are applied IN SQL -- so they order the whole
+        match set BEFORE the limit/offset window, which a post-page re-sort cannot do (a
+        rank-9 human term can never be lifted into a limit-5 page after the fact):
+
+        1. an EXACT primary-label match leads. bm25 length-normalisation otherwise sinks a
+           well-annotated human term (synonyms + a long definition) below a bare
+           veterinary variant that happens to share the query tokens -- so "cystic
+           fibrosis" returned "cystic fibrosis, pig" at rank 0 and the human term at rank 9.
+        2. a HUMAN-disease prior demotes Mondo's non-human-animal branch (root + closure
+           descendants) below human terms, so a name query is never led by livestock.
+
+        ``total`` is a COUNT over the same MATCH (no join), so it stays invariant under
+        ``limit`` -- the two priors reorder rows, they never change the result-set size.
+        """
         match = self._fts_query(query)
+        query_upper = (query or "").strip().upper()
         where = "term_fts MATCH ?"
         if not include_obsolete:
             where += " AND t.is_obsolete = 0"
         sql = (
             "SELECT f.mondo_id, t.name, t.definition, bm25(term_fts) AS score "  # noqa: S608
             "FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "
-            f"WHERE {where} ORDER BY score LIMIT ? OFFSET ?"
+            "LEFT JOIN mondo_closure nh ON nh.mondo_id = f.mondo_id AND nh.ancestor_id = ? "
+            f"WHERE {where} "
+            "ORDER BY CASE WHEN t.name_upper = ? THEN 0 ELSE 1 END, "
+            "CASE WHEN nh.mondo_id IS NULL THEN 0 ELSE 1 END, score "
+            "LIMIT ? OFFSET ?"
         )
         count_sql = (
             "SELECT COUNT(*) AS n FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "  # noqa: S608
             f"WHERE {where}"
         )
         try:
-            rows = self._conn.execute(sql, (match, limit, offset)).fetchall()
+            rows = self._conn.execute(
+                sql, (NON_HUMAN_ANIMAL_ROOT, match, query_upper, limit, offset)
+            ).fetchall()
             total = int(self._conn.execute(count_sql, (match,)).fetchone()["n"])
         except sqlite3.Error:
             return self._search_like(
@@ -157,19 +179,26 @@ class MondoRepository:
     def _search_like(
         self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
     ) -> tuple[list[dict[str, Any]], int]:
-        """``LIKE`` fallback for pathological FTS input."""
+        """``LIKE`` fallback for pathological FTS input (same exact/human-first priors)."""
         pattern = "%" + query.upper().replace("%", "").replace("_", "") + "%"
-        where = "name_upper LIKE ?"
+        query_upper = (query or "").strip().upper()
+        where = "t.name_upper LIKE ?"
+        count_where = "name_upper LIKE ?"
         if not include_obsolete:
-            where += " AND is_obsolete = 0"
+            where += " AND t.is_obsolete = 0"
+            count_where += " AND is_obsolete = 0"
         rows = self._conn.execute(
-            f"SELECT mondo_id, name, definition FROM term WHERE {where} "  # noqa: S608
-            "ORDER BY name LIMIT ? OFFSET ?",
-            (pattern, limit, offset),
+            "SELECT t.mondo_id, t.name, t.definition FROM term t "  # noqa: S608
+            "LEFT JOIN mondo_closure nh ON nh.mondo_id = t.mondo_id AND nh.ancestor_id = ? "
+            f"WHERE {where} "
+            "ORDER BY CASE WHEN t.name_upper = ? THEN 0 ELSE 1 END, "
+            "CASE WHEN nh.mondo_id IS NULL THEN 0 ELSE 1 END, t.name "
+            "LIMIT ? OFFSET ?",
+            (NON_HUMAN_ANIMAL_ROOT, pattern, query_upper, limit, offset),
         ).fetchall()
         total = int(
             self._conn.execute(
-                f"SELECT COUNT(*) AS n FROM term WHERE {where}",  # noqa: S608
+                f"SELECT COUNT(*) AS n FROM term WHERE {count_where}",  # noqa: S608
                 (pattern,),
             ).fetchone()["n"]
         )
@@ -310,6 +339,18 @@ class MondoRepository:
             }
             for r in rows
         ]
+
+    def xref_prefixes(self) -> set[str]:
+        """The distinct cross-reference prefixes present in the index (upper-case).
+
+        This is the closed vocabulary ``map_cross_ontology.prefixes`` filters over -- it
+        is DATA-DERIVED (a Mondo release carries ~40 sources and gains more over time), so
+        it is validated at the service rather than frozen into a static schema ``enum``
+        that would be narrower than the runtime. An unrecognised prefix is rejected with
+        ``invalid_input`` instead of silently matching nothing.
+        """
+        rows = self._conn.execute("SELECT DISTINCT prefix FROM xref").fetchall()
+        return {str(r["prefix"]).upper() for r in rows if r["prefix"]}
 
     def mondo_for_xref(self, xref_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         """MONDO terms cross-referencing ``xref_id`` -- ONE row per term (strongest predicate).

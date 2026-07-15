@@ -160,7 +160,7 @@ class MondoService:
             raise InvalidInputError(
                 "query must be a non-empty MONDO id, label, or xref.", field="query"
             )
-        match_type, mondo_id = self._resolution.classify_resolution(raw)
+        match_type, mondo_id = self._resolution.classify_resolution(raw, field="query")
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
             raise NotFoundError(f"No Mondo term for {mondo_id}.")
@@ -172,6 +172,14 @@ class MondoService:
             "obsolete": record["is_obsolete"],
             "mondo_version": self._mondo_version(),
         }
+        # standard/full carry the fenced definition too, so response_mode meaningfully
+        # widens the top-level payload (and a standard resolve can skip a get_disease
+        # round trip when the label alone is enough). compact/minimal stay lean.
+        if response_mode in ("standard", "full"):
+            definition = _fence_definition(record["definition"], mondo_id=mondo_id)
+            if definition is not None:
+                out["definition"] = definition
+                enforce_untrusted_text_limits([UntrustedText.model_validate(definition)])
         if record["replaced_by"]:
             out["replaced_by"] = record["replaced_by"]
         return out
@@ -394,14 +402,25 @@ class MondoService:
         *,
         prefixes: list[str] | None = None,
         response_mode: str = DEFAULT_RESPONSE_MODE,
-        fields: list[str] | None = None,
     ) -> dict[str, Any]:
         """Return all cross-ontology mappings for a term, grouped by prefix."""
         mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         normalized = [p.strip().upper() for p in prefixes if p.strip()] if prefixes else None
+        if normalized:
+            # Reject an unrecognised prefix (Response-Envelope v1.1: silent omission is
+            # not compliant). A bogus source that matched nothing used to return
+            # count:0/success:true -- indistinguishable from a term with no such xref.
+            available = self.repo.xref_prefixes()
+            unknown = sorted({p for p in normalized if p not in available})
+            if unknown:
+                raise InvalidInputError(
+                    "prefixes references cross-reference source(s) not present in Mondo.",
+                    field="prefixes",
+                    allowed=sorted(available),
+                )
         mappings = self._grouped_xrefs(mondo_id, normalized)
-        payload = {
+        return {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,
             "mappings": mappings,
@@ -409,4 +428,3 @@ class MondoService:
             "prefixes_filter": normalized,
             "mondo_version": self._mondo_version(),
         }
-        return select_fields(payload, fields)

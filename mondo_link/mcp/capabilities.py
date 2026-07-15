@@ -28,15 +28,16 @@ from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE, RESPONSE_MODES
 if TYPE_CHECKING:
     from fastmcp import FastMCP
 
-#: Error taxonomy surfaced by every tool (see mondo_link.mcp.envelope).
+#: Error taxonomy surfaced by every tool -- the CLOSED enum from Response-Envelope
+#: Standard v1 (see mondo_link.mcp.envelope). The local Mondo index is this server's
+#: only upstream, so a missing/building index is ``upstream_unavailable``.
 ERROR_CODES: list[str] = [
     "invalid_input",
     "not_found",
     "ambiguous_query",
-    "data_unavailable",
-    "rate_limited",
     "upstream_unavailable",
-    "internal_error",
+    "rate_limited",
+    "internal",
 ]
 
 #: Frozen tool surface. capabilities.TOOLS must equal the registered tool set.
@@ -163,9 +164,10 @@ def build_capabilities() -> dict[str, Any]:
             "mode (the caller has opted out of all non-essential _meta)."
         ),
         "field_projection": (
-            "get_disease and map_cross_ontology accept fields=[...] for a sparse "
+            "get_disease and get_disease_batch accept fields=[...] for a sparse "
             "projection: top-level keys, or dotted into a group (e.g. 'xrefs.OMIM'). "
-            "Identity anchors (mondo_id, name, mondo_version) are always returned."
+            "Identity anchors (mondo_id, name, mondo_version) are always returned. "
+            "map_cross_ontology narrows with prefixes=[...] instead."
         ),
         "id_normalization": (
             "MONDO ids accepted/returned as both 'MONDO:0008426' and '0008426'; "
@@ -173,9 +175,12 @@ def build_capabilities() -> dict[str, Any]:
         ),
         "search_semantics": (
             "search_diseases is full-text search over disease name, synonyms, and "
-            "definition (relevance-ranked). To normalise a single label/id/xref to "
-            "its canonical term use resolve_disease; an ambiguous label returns "
-            "ambiguous_query with candidates."
+            "definition. Ranking applies an exact primary-label boost (an exactly "
+            "name-matching term leads) and a human-disease prior (Mondo's non-human-"
+            "animal/veterinary branch is demoted below human terms), then bm25 within "
+            "each tier -- so an exact human disease is not out-ranked by a livestock "
+            "variant. To normalise a single label/id/xref to its canonical term use "
+            "resolve_disease; an ambiguous label returns ambiguous_query with candidates."
         ),
         "truncation_contract": (
             "List tools (search_diseases, get_disease_ancestors, "

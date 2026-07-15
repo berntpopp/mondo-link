@@ -122,8 +122,10 @@ async def test_data_unavailable_message_severs_db_path_and_sqlite_error(
     )
     mcp = facade_factory(exc)
     result = await mcp.call_tool("get_disease", {"term": "MONDO:0012345"})
+    # the local index is this server's only upstream -> upstream_unavailable (closed enum)
+    assert result.is_error is True
     for view in _both_views(result):
-        assert view["error_code"] == "data_unavailable"
+        assert view["error_code"] == "upstream_unavailable"
         msg = view["message"]
         assert LEAKED_DB_PATH not in msg
         assert "/srv/secret" not in msg
@@ -167,7 +169,7 @@ async def test_batch_row_data_unavailable_severs_path(facade_factory: Any) -> No
     result = await mcp.call_tool("get_disease_batch", {"terms": ["MONDO:0012345"]})
     for view in _both_views(result):
         row = view["results"][0]
-        assert row["error_code"] == "data_unavailable"
+        assert row["error_code"] == "upstream_unavailable"
         assert LEAKED_DB_PATH not in row["message"]
         assert "/srv/secret" not in row["message"]
 
@@ -175,23 +177,32 @@ async def test_batch_row_data_unavailable_severs_path(facade_factory: Any) -> No
 # -- recursive whole-envelope backstop (candidates leaf) ----------------------
 
 
-async def test_ambiguous_candidates_are_id_only_no_name_prose(facade_factory: Any) -> None:
+async def test_ambiguous_candidates_carry_trusted_db_name_code_point_clean(
+    facade_factory: Any,
+) -> None:
+    # A candidate ``name`` is the term's TRUSTED DB label (same ``term.name`` column every
+    # success-path payload returns verbatim), so it is CARRIED -- it is what makes the
+    # candidate list actionable from the error alone. It is still code-point-scrubbed
+    # (forbidden control/zero-width/bidi/NUL never survive), defence-in-depth.
     exc = AmbiguousQueryError(
-        f"'{HOSTILE}' matches 2 Mondo terms",
+        "'hypotonia' matches 2 Mondo terms",
         candidates=[
-            {"mondo_id": "MONDO:0000001", "name": f"Alpha {INJECTION}{_TAIL}", "label_type": "x"},
-            {"mondo_id": "MONDO:0000002", "name": "Beta", "label_type": "x"},
+            {"mondo_id": "MONDO:0000001", "name": f"Alpha syndrome{_TAIL}", "label_type": "x"},
+            {"mondo_id": "MONDO:0000002", "name": "Beta syndrome", "label_type": "x"},
         ],
     )
     mcp = facade_factory(exc)
     result = await mcp.call_tool("resolve_disease", {"query": "anything"})
+    assert result.is_error is True
     for view in _both_views(result):
         assert view["error_code"] == "ambiguous_query"
-        _assert_clean_tree(view)
-        # candidates are rebuilt to validated ids ONLY -- the free-text name
-        # (carrying prose) is structurally excluded, not merely sanitized.
+        # every candidate carries a grammar-valid id AND its trusted name
         for cand in view["candidates"]:
-            assert set(cand) == {"mondo_id"}
+            assert set(cand) >= {"mondo_id", "name"}
+            assert cand["name"]
+            _no_code_points(cand["name"])
+        names = {c["name"] for c in view["candidates"]}
+        assert names == {"Alpha syndrome", "Beta syndrome"}
 
 
 # -- hostile / unknown argument name -------------------------------------------
@@ -272,21 +283,29 @@ async def test_hostile_unknown_resource_uri_is_not_echoed(facade_factory: Any) -
 # -- recursive: the COMPLETE payload carries no prose and no code points -------
 
 
-async def test_complete_error_payload_has_no_prose_or_code_points(facade_factory: Any) -> None:
+async def test_complete_error_payload_has_no_code_points_and_drops_invalid_ids(
+    facade_factory: Any,
+) -> None:
+    # The caller's HOSTILE query is never echoed into the error envelope, and a candidate
+    # with a non-conforming id is dropped ENTIRELY. The surviving candidate carries its
+    # trusted DB name (code-point clean). A candidate name is trusted provenance, so it is
+    # NOT injection-scrubbed for prose the way a caller-echoed value would be.
     exc = AmbiguousQueryError(
         f"'{HOSTILE}' is ambiguous",
         candidates=[
-            {"mondo_id": "MONDO:0000001", "name": f"Alpha {INJECTION}{_TAIL}"},
-            {"mondo_id": "bogus-id", "name": INJECTION},  # invalid id -> dropped entirely
+            {"mondo_id": "MONDO:0000001", "name": f"Alpha syndrome{_TAIL}"},
+            {"mondo_id": "bogus-id", "name": "Beta"},  # invalid id -> dropped entirely
         ],
     )
     mcp = facade_factory(exc)
     result = await mcp.call_tool("resolve_disease", {"query": HOSTILE})
     structured, mirror = _both_views(result)
     for view in (structured, mirror):
-        _assert_clean_tree(view)
-    # the invalid-id candidate was dropped; the valid one carries id only (no name)
-    assert structured["candidates"] == [{"mondo_id": "MONDO:0000001"}]
+        # the caller's hostile query must not have leaked anywhere in the envelope
+        assert INJECTION not in json.dumps(view, ensure_ascii=False)
+        _no_code_points(json.dumps(view, ensure_ascii=False))
+    # the invalid-id candidate was dropped; the valid one carries its clean trusted name
+    assert structured["candidates"] == [{"mondo_id": "MONDO:0000001", "name": "Alpha syndrome"}]
 
 
 async def test_complete_batch_payload_has_no_prose_or_code_points(facade_factory: Any) -> None:

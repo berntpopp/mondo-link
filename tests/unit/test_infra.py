@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Awaitable, Callable
-from typing import Any
+from typing import Any, cast
 
 from mondo_link.buildinfo import build_info
 from mondo_link.exceptions import (
@@ -42,9 +42,15 @@ def _raiser(exc: BaseException) -> Callable[[], Awaitable[dict[str, Any]]]:
 
 
 async def _run(exc: BaseException) -> dict[str, Any]:
-    return await run_mcp_tool(
+    result = await run_mcp_tool(
         "get_disease", _raiser(exc), context=McpErrorContext("get_disease", arguments={"term": "x"})
     )
+    # The error path now returns a ToolResult (carrying MCP isError:true, Response-
+    # Envelope v1); read its structured envelope. The success path still returns a dict.
+    if isinstance(result, dict):
+        return result
+    assert result.is_error is True
+    return cast("dict[str, Any]", result.structured_content)
 
 
 # --- envelope: success ------------------------------------------------------
@@ -103,19 +109,20 @@ async def test_withdrawn_entry_surfaces_replacement() -> None:
 
 
 async def test_ambiguous_query_surfaces_candidates() -> None:
-    # Candidates are rebuilt to grammar-validated MONDO ids ONLY (no free-text
-    # name copied from the exception); a bad id would be dropped.
+    # Candidates carry a grammar-validated MONDO id AND the trusted DB ``name`` (the
+    # same term.name every success payload returns) so the model can disambiguate from
+    # the error alone; a bad id is dropped and the name is code-point scrubbed.
     exc = AmbiguousQueryError(
         "ambiguous",
         candidates=[
-            {"mondo_id": "MONDO:0000001", "name": "prose"},
-            {"mondo_id": "MONDO:0000002", "name": "prose"},
+            {"mondo_id": "MONDO:0000001", "name": "Alpha syndrome"},
+            {"mondo_id": "MONDO:0000002", "name": "Beta syndrome"},
         ],
     )
     result = await _run(exc)
     assert result["error_code"] == "ambiguous_query"
     assert len(result["candidates"]) == 2
-    assert result["candidates"][0] == {"mondo_id": "MONDO:0000001"}
+    assert result["candidates"][0] == {"mondo_id": "MONDO:0000001", "name": "Alpha syndrome"}
     assert result["_meta"]["next_commands"][0]["tool"] == "get_disease"
 
 
@@ -131,9 +138,11 @@ async def test_invalid_input_surfaces_field_and_allowed() -> None:
     assert "hint" not in result
 
 
-async def test_data_unavailable_is_retryable() -> None:
+async def test_data_unavailable_maps_to_upstream_unavailable_and_is_retryable() -> None:
+    # The local Mondo index is this server's only upstream; a missing/building index is
+    # ``upstream_unavailable`` (the closed enum has no ``data_unavailable``).
     result = await _run(DataUnavailableError())
-    assert result["error_code"] == "data_unavailable"
+    assert result["error_code"] == "upstream_unavailable"
     assert result["retryable"] is True
     assert result["recovery_action"] == "retry_backoff"
 
@@ -151,7 +160,7 @@ async def test_upstream_unavailable_from_service_and_download() -> None:
 
 async def test_internal_error_for_unclassified() -> None:
     result = await _run(ValueError("boom"))
-    assert result["error_code"] == "internal_error"
+    assert result["error_code"] == "internal"
     assert result["recovery_action"] == "switch_tool"
 
 
@@ -159,11 +168,11 @@ async def test_mcp_tool_error_custom_code() -> None:
     # The error_code is preserved, but the public message is a FIXED string keyed
     # on the code -- an arbitrary author/caller-influenced message is not surfaced
     # (prose is unsafe even code-point-stripped).
-    result = await _run(McpToolError(error_code="data_unavailable", message="cold"))
-    assert result["error_code"] == "data_unavailable"
+    result = await _run(McpToolError(error_code="upstream_unavailable", message="cold"))
+    assert result["error_code"] == "upstream_unavailable"
     assert result["message"] != "cold"
     assert "cold" not in result["message"]
-    assert result["message"] == _FIXED_MESSAGES["data_unavailable"]
+    assert result["message"] == _FIXED_MESSAGES["upstream_unavailable"]
 
 
 def test_classify_exception_maps_typed_errors() -> None:
@@ -172,7 +181,7 @@ def test_classify_exception_maps_typed_errors() -> None:
     assert classify_exception(AmbiguousQueryError("y"))[0] == "ambiguous_query"
     assert classify_exception(InvalidInputError("z", "field"))[0] == "invalid_input"
     code, message = classify_exception(ValueError("boom"))
-    assert code == "internal_error"
+    assert code == "internal"
     assert "boom" not in message  # client-safe: internal detail is not leaked
 
 

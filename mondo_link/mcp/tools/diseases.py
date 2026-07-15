@@ -9,7 +9,6 @@ from pydantic import Field
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
 from mondo_link.mcp.next_commands import after_get_disease, after_resolve_disease, after_search
-from mondo_link.mcp.schemas import DISEASE_SCHEMA, RESOLVE_DISEASE_SCHEMA, SEARCH_SCHEMA
 from mondo_link.mcp.service_adapters import get_mondo_service
 from mondo_link.mcp.tools._common import FieldsArg, QueryStr, ResponseMode, TermStr
 
@@ -24,7 +23,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
         name="resolve_disease",
         title="Resolve Disease",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=RESOLVE_DISEASE_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "resolve"},
         description=(
             "Resolve a disease label, synonym, MONDO id, or external cross-reference "
@@ -56,7 +55,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
         name="search_diseases",
         title="Search Diseases",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=SEARCH_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease", "search"},
         description=(
             "Full-text search over Mondo disease names, synonyms, and definitions "
@@ -103,7 +102,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
         name="get_disease",
         title="Get Disease",
         annotations=READ_ONLY_OPEN_WORLD,
-        output_schema=DISEASE_SCHEMA,
+        output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"disease"},
         description=(
             "Return a Mondo disease term: definition, synonyms, grouped "

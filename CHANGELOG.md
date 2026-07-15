@@ -6,6 +6,72 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-15
+
+MCP contract hardening in response to the live fleet audit (issue #25: 9 confirmed
+defects, 2 high). Adopts Tool-Surface Budget Standard v1 and Tool-Schema Documentation
+Standard v1, and closes the fleet-wide `isError`/`error_code` gaps against the vendored
+Behaviour Conformance v1 gate (now run in CI).
+
+### Fixed
+
+- **[HIGH] search_diseases no longer ranks veterinary terms above the human disease.**
+  Ranking was raw BM25, whose length-normalisation sank a well-annotated human term
+  (synonyms + a long definition) below a bare veterinary variant sharing the query
+  tokens — so "cystic fibrosis" returned "cystic fibrosis, pig" at rank 0 and the human
+  MONDO:0009061 at rank 9. Ranking now applies, IN SQL (before the limit/offset window),
+  an exact primary-label boost and a human-disease prior (Mondo's non-human-animal branch
+  is demoted below human terms), then BM25 within each tier. `total` is unchanged (a COUNT
+  over the same MATCH), so it stays invariant under `limit`.
+- **[HIGH] resolver candidates now carry names.** `resolve_disease` (ambiguous / not_found
+  / obsolete `replaced_by`) returned bare MONDO ids with no labels in every response mode,
+  forcing a second call to disambiguate. Each candidate/replacement now carries its trusted
+  DB `name` (the same `term.name` every success payload returns) plus a fuzzy `score` when
+  present. The name is still code-point-scrubbed; only long free-text definitions remain
+  fenced as untrusted.
+- **Every error envelope now carries MCP `isError: true`** (Response-Envelope v1). Error
+  paths return a `ToolResult(structured_content=…, is_error=True)` instead of a bare dict,
+  so a client branching on `isError` sees the failure. The structured envelope (error_code,
+  field, candidates, next_commands) is preserved.
+- **`error_code` is now the closed six-value enum** (`invalid_input`, `not_found`,
+  `ambiguous_query`, `upstream_unavailable`, `rate_limited`, `internal`). The local Mondo
+  index is this server's only upstream, so a missing/building index maps to
+  `upstream_unavailable`; `data_unavailable`/`internal_error` are no longer emitted.
+- **A malformed MONDO id is reported as `invalid_input` (field `term`), not `not_found`.**
+  `get_disease("MONDO:abcxyz")` was indistinguishable from a well-formed-but-absent id;
+  the two now carry different codes so the model applies the right repair.
+- **map_cross_ontology rejects an unrecognised `prefixes` value with `invalid_input`**
+  instead of silently returning `count: 0, success: true` (Response-Envelope v1.1: silent
+  omission is not compliant). Valid sources — including data-present ones beyond the
+  first-class set (ICD10CM, EFO, …) — still filter.
+- **The batch item cap (1..50) is declared in the input schema** (`minItems`/`maxItems`)
+  and an over-cap call names the constraint ("must have between 1 and 50 items") instead of
+  a generic message.
+- **get_diagnostics no longer promises a `mapping` count it never returned**, and its
+  declared `outputSchema` (which named six properties the payload never carried) is gone.
+
+### Changed
+
+- **Tool surface cut ~7,282t → ~4,165t** by suppressing every tool's `outputSchema`
+  (`output_schema=None`; 43% of the old surface, a field no model reads and the MCP spec
+  makes optional) and disabling `$ref` dereferencing. `structuredContent` is unaffected.
+- **resolve_disease standard/full now return the fenced `definition`**, so `response_mode`
+  meaningfully widens the payload (and a standard resolve can skip a get_disease round trip);
+  the previously-declared-but-never-returned `definition` field is now real.
+- **Batch rows carry `index` on every row** (success and failure) for uniform correlation;
+  a failure row still omits the raw input (an unresolved value must not be echoed).
+- **map_cross_ontology drops the `fields` projection parameter** (its `prefixes` filter
+  covers narrowing); `get_disease`/`get_disease_batch` keep `fields`.
+- Discovery surface (capabilities, reference notes, server instructions) updated to match:
+  the closed error taxonomy, the new search-ranking semantics, and the field-projection scope.
+
+### Added
+
+- Vendored **Behaviour Conformance v1** gate (`tests/conformance/behaviour.py` +
+  `test_behaviour_v1.py`, byte-identical from the router) and wired the behaviour probe into
+  `conformance.yml`. The line-budget checker now exempts vendored conformance probes (derived
+  from each file's own docstring marker).
+
 ## [0.3.6] - 2026-07-14
 
 ### Changed
