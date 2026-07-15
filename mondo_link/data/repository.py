@@ -340,18 +340,6 @@ class MondoRepository:
             for r in rows
         ]
 
-    def xref_prefixes(self) -> set[str]:
-        """The distinct cross-reference prefixes present in the index (upper-case).
-
-        This is the closed vocabulary ``map_cross_ontology.prefixes`` filters over -- it
-        is DATA-DERIVED (a Mondo release carries ~40 sources and gains more over time), so
-        it is validated at the service rather than frozen into a static schema ``enum``
-        that would be narrower than the runtime. An unrecognised prefix is rejected with
-        ``invalid_input`` instead of silently matching nothing.
-        """
-        rows = self._conn.execute("SELECT DISTINCT prefix FROM xref").fetchall()
-        return {str(r["prefix"]).upper() for r in rows if r["prefix"]}
-
     def mondo_for_xref(self, xref_id: str, *, limit: int, offset: int = 0) -> list[dict[str, Any]]:
         """MONDO terms cross-referencing ``xref_id`` -- ONE row per term (strongest predicate).
 

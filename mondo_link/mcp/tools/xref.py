@@ -10,7 +10,7 @@ from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
 from mondo_link.mcp.next_commands import after_cross_ontology, after_resolve_xref
 from mondo_link.mcp.service_adapters import get_mondo_service
-from mondo_link.mcp.tools._common import ResponseMode, TermStr, XrefIdStr
+from mondo_link.mcp.tools._common import PrefixesArg, ResponseMode, TermStr, XrefIdStr
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -65,26 +65,17 @@ def register_xref_tools(mcp: FastMCP) -> None:
         output_schema=None,  # Tool-Surface Budget v1 B2 (see tools/__init__.py)
         tags={"xref"},
         description=(
-            "List a Mondo term's cross-references to other ontologies, grouped by "
-            "target prefix (OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD/..., plus "
-            "ICD/EFO/NANDO/... as present), each with its mapping predicate and origin "
-            "(obo_xref|sssom). Optionally restrict to a subset of prefixes; an "
-            "unrecognised prefix is rejected with invalid_input. "
+            "List a Mondo term's cross-references to other ontologies, grouped by target "
+            "prefix. get_disease surfaces every source; this tool's `prefixes` filter is "
+            "the first-class set (OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD), each "
+            "with its mapping predicate and origin (obo_xref|sssom). An unrecognised prefix "
+            "is rejected with invalid_input. "
             "Signature: map_cross_ontology(term, prefixes=, response_mode=)."
         ),
     )
     async def map_cross_ontology(
         term: TermStr,
-        prefixes: Annotated[
-            list[str] | None,
-            Field(
-                description="Restrict to these cross-reference source prefixes (as returned "
-                "under a term's grouped xrefs, e.g. OMIM/ORPHA/DOID/ICD10CM/EFO). An "
-                "unrecognised prefix is rejected with invalid_input, never silently ignored. "
-                "Omit to return every source.",
-                examples=[["OMIM", "ORPHA"], ["DOID"]],
-            ),
-        ] = None,
+        prefixes: PrefixesArg = None,
         response_mode: ResponseMode = "compact",
     ) -> dict[str, Any]:
         async def call() -> dict[str, Any]:

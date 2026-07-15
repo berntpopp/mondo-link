@@ -177,18 +177,20 @@ async def test_batch_row_data_unavailable_severs_path(facade_factory: Any) -> No
 # -- recursive whole-envelope backstop (candidates leaf) ----------------------
 
 
-async def test_ambiguous_candidates_carry_trusted_db_name_code_point_clean(
+async def test_ambiguous_candidate_name_is_never_taken_from_the_exception(
     facade_factory: Any,
 ) -> None:
-    # A candidate ``name`` is the term's TRUSTED DB label (same ``term.name`` column every
-    # success-path payload returns verbatim), so it is CARRIED -- it is what makes the
-    # candidate list actionable from the error alone. It is still code-point-scrubbed
-    # (forbidden control/zero-width/bidi/NUL never survive), defence-in-depth.
+    # SECURITY: a candidate ``name`` is NEVER copied from the exception -- an exception
+    # attribute is free-text that can carry prompt-injection prose surviving code-point
+    # stripping. The name is re-derived from the DB by the validated id; this facade's
+    # service has no repo, so it cannot vouch for the id and the candidate is ID-ONLY.
+    # The hostile name (and the invalid-id candidate) must never reach either view.
     exc = AmbiguousQueryError(
-        "'hypotonia' matches 2 Mondo terms",
+        f"'{HOSTILE}' matches 2 Mondo terms",
         candidates=[
-            {"mondo_id": "MONDO:0000001", "name": f"Alpha syndrome{_TAIL}", "label_type": "x"},
-            {"mondo_id": "MONDO:0000002", "name": "Beta syndrome", "label_type": "x"},
+            {"mondo_id": "MONDO:0000001", "name": f"Alpha {INJECTION}{_TAIL}", "label_type": "x"},
+            {"mondo_id": "MONDO:0000002", "name": HOSTILE, "label_type": "x"},
+            {"mondo_id": "bogus-id", "name": "Beta"},  # invalid id -> dropped entirely
         ],
     )
     mcp = facade_factory(exc)
@@ -196,13 +198,11 @@ async def test_ambiguous_candidates_carry_trusted_db_name_code_point_clean(
     assert result.is_error is True
     for view in _both_views(result):
         assert view["error_code"] == "ambiguous_query"
-        # every candidate carries a grammar-valid id AND its trusted name
+        _assert_clean_tree(view)  # no injection prose, no code points, anywhere
+        # candidates are grammar-validated ids ONLY -- no exception-carried name survives
         for cand in view["candidates"]:
-            assert set(cand) >= {"mondo_id", "name"}
-            assert cand["name"]
-            _no_code_points(cand["name"])
-        names = {c["name"] for c in view["candidates"]}
-        assert names == {"Alpha syndrome", "Beta syndrome"}
+            assert set(cand) == {"mondo_id"}, cand
+        assert [c["mondo_id"] for c in view["candidates"]] == ["MONDO:0000001", "MONDO:0000002"]
 
 
 # -- hostile / unknown argument name -------------------------------------------
@@ -283,29 +283,24 @@ async def test_hostile_unknown_resource_uri_is_not_echoed(facade_factory: Any) -
 # -- recursive: the COMPLETE payload carries no prose and no code points -------
 
 
-async def test_complete_error_payload_has_no_code_points_and_drops_invalid_ids(
-    facade_factory: Any,
-) -> None:
-    # The caller's HOSTILE query is never echoed into the error envelope, and a candidate
-    # with a non-conforming id is dropped ENTIRELY. The surviving candidate carries its
-    # trusted DB name (code-point clean). A candidate name is trusted provenance, so it is
-    # NOT injection-scrubbed for prose the way a caller-echoed value would be.
+async def test_complete_error_payload_has_no_prose_or_code_points(facade_factory: Any) -> None:
+    # The caller's HOSTILE query is never echoed, the invalid-id candidate is dropped, and
+    # NO exception-carried name (hostile prose) survives -- candidates are id-only here
+    # because the raising service cannot re-derive a trusted DB label.
     exc = AmbiguousQueryError(
         f"'{HOSTILE}' is ambiguous",
         candidates=[
-            {"mondo_id": "MONDO:0000001", "name": f"Alpha syndrome{_TAIL}"},
-            {"mondo_id": "bogus-id", "name": "Beta"},  # invalid id -> dropped entirely
+            {"mondo_id": "MONDO:0000001", "name": f"Alpha {INJECTION}{_TAIL}"},
+            {"mondo_id": "bogus-id", "name": INJECTION},  # invalid id -> dropped entirely
         ],
     )
     mcp = facade_factory(exc)
     result = await mcp.call_tool("resolve_disease", {"query": HOSTILE})
     structured, mirror = _both_views(result)
     for view in (structured, mirror):
-        # the caller's hostile query must not have leaked anywhere in the envelope
-        assert INJECTION not in json.dumps(view, ensure_ascii=False)
-        _no_code_points(json.dumps(view, ensure_ascii=False))
-    # the invalid-id candidate was dropped; the valid one carries its clean trusted name
-    assert structured["candidates"] == [{"mondo_id": "MONDO:0000001", "name": "Alpha syndrome"}]
+        _assert_clean_tree(view)
+    # the invalid-id candidate was dropped; the valid one carries id ONLY (no exc name)
+    assert structured["candidates"] == [{"mondo_id": "MONDO:0000001"}]
 
 
 async def test_complete_batch_payload_has_no_prose_or_code_points(facade_factory: Any) -> None:

@@ -109,20 +109,22 @@ async def test_withdrawn_entry_surfaces_replacement() -> None:
 
 
 async def test_ambiguous_query_surfaces_candidates() -> None:
-    # Candidates carry a grammar-validated MONDO id AND the trusted DB ``name`` (the
-    # same term.name every success payload returns) so the model can disambiguate from
-    # the error alone; a bad id is dropped and the name is code-point scrubbed.
+    # Candidates carry a grammar-validated MONDO id; any ``name`` is RE-DERIVED from the
+    # DB by that id and is NEVER copied from the exception (an exception attribute is
+    # free-text that could carry injection prose). This test asserts that security
+    # property (the fake exception name never appears) without depending on DB content.
     exc = AmbiguousQueryError(
         "ambiguous",
         candidates=[
-            {"mondo_id": "MONDO:0000001", "name": "Alpha syndrome"},
-            {"mondo_id": "MONDO:0000002", "name": "Beta syndrome"},
+            {"mondo_id": "MONDO:0000001", "name": "EXC-PROSE-MUST-NOT-APPEAR"},
+            {"mondo_id": "MONDO:0000002", "name": "EXC-PROSE-MUST-NOT-APPEAR"},
         ],
     )
     result = await _run(exc)
     assert result["error_code"] == "ambiguous_query"
-    assert len(result["candidates"]) == 2
-    assert result["candidates"][0] == {"mondo_id": "MONDO:0000001", "name": "Alpha syndrome"}
+    assert [c["mondo_id"] for c in result["candidates"]] == ["MONDO:0000001", "MONDO:0000002"]
+    for cand in result["candidates"]:
+        assert cand.get("name") != "EXC-PROSE-MUST-NOT-APPEAR"  # never the exception's name
     assert result["_meta"]["next_commands"][0]["tool"] == "get_disease"
 
 

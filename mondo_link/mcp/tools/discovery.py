@@ -65,7 +65,7 @@ def register_discovery_tools(mcp: FastMCP) -> None:
             "loaded Mondo release version, term/obsolete/xref/closure counts, "
             "schema version, and when it was built, plus a runtime block "
             "(request/error counts and latency percentiles p50/p95/p99). Use this to "
-            "confirm freshness or diagnose a data_unavailable error. "
+            "confirm freshness or diagnose an upstream_unavailable error. "
             "Signature: get_diagnostics()."
         ),
     )

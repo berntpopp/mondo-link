@@ -26,24 +26,33 @@ Behaviour Conformance v1 gate (now run in CI).
 - **[HIGH] resolver candidates now carry names.** `resolve_disease` (ambiguous / not_found
   / obsolete `replaced_by`) returned bare MONDO ids with no labels in every response mode,
   forcing a second call to disambiguate. Each candidate/replacement now carries its trusted
-  DB `name` (the same `term.name` every success payload returns) plus a fuzzy `score` when
-  present. The name is still code-point-scrubbed; only long free-text definitions remain
-  fenced as untrusted.
-- **Every error envelope now carries MCP `isError: true`** (Response-Envelope v1). Error
-  paths return a `ToolResult(structured_content=…, is_error=True)` instead of a bare dict,
-  so a client branching on `isError` sees the failure. The structured envelope (error_code,
-  field, candidates, next_commands) is preserved.
-- **`error_code` is now the closed six-value enum** (`invalid_input`, `not_found`,
-  `ambiguous_query`, `upstream_unavailable`, `rate_limited`, `internal`). The local Mondo
-  index is this server's only upstream, so a missing/building index maps to
-  `upstream_unavailable`; `data_unavailable`/`internal_error` are no longer emitted.
+  DB `name` (plus a fuzzy `score` when present). The name is RE-DERIVED from the DB by the
+  grammar-validated id — never copied from the exception, whose free-text could carry
+  prompt-injection prose surviving code-point stripping; when the DB cannot vouch for an id
+  the candidate stays id-only. Only long free-text definitions remain fenced as untrusted.
+- **Every error envelope now carries MCP `isError: true`** (Response-Envelope v1), whether
+  the tool body RAISES or RETURNS the error — both routes go through the chokepoint that
+  returns a `ToolResult(structured_content=…, is_error=True)` instead of a bare dict, so a
+  client branching on `isError` always sees the failure with the structured envelope intact.
+- **`error_code` is the closed six-value enum** (`invalid_input`, `not_found`,
+  `ambiguous_query`, `upstream_unavailable`, `rate_limited`, `internal`), typed and coerced
+  at the emit point so a stray legacy code can never reach the wire. The local Mondo index
+  is this server's only upstream, so `data_unavailable`→`upstream_unavailable` and
+  `internal_error`→`internal`; neither legacy code is emitted.
 - **A malformed MONDO id is reported as `invalid_input` (field `term`), not `not_found`.**
   `get_disease("MONDO:abcxyz")` was indistinguishable from a well-formed-but-absent id;
   the two now carry different codes so the model applies the right repair.
-- **map_cross_ontology rejects an unrecognised `prefixes` value with `invalid_input`**
-  instead of silently returning `count: 0, success: true` (Response-Envelope v1.1: silent
-  omission is not compliant). Valid sources — including data-present ones beyond the
-  first-class set (ICD10CM, EFO, …) — still filter.
+- **map_cross_ontology `prefixes` is a declared enum, validated before stripping.** It was a
+  bare `list[str]`: a bogus source matched nothing and returned `count: 0, success: true`
+  (silent omission, forbidden by Response-Envelope v1.1), and `prefixes=[" "]` stripped to
+  `[]` and returned EVERY source. It is now the first-class closed set (an `enum` in the
+  schema, so a validating client pre-checks and pydantic rejects an unknown/blank value with
+  `invalid_input` before the body); the service revalidates raw values before stripping.
+- **`response_mode=minimal` narrows a record's collections, it never deletes them.** minimal
+  on `get_disease` dropped `xrefs`/`parents`/`children` entirely; it now keeps every
+  populated collection, narrowing each row to its stable identifier — a record's payload can
+  no longer silently vanish. Likewise an unknown `fields` projection is now `invalid_input`
+  (field `fields`) naming the projectable keys, not a silent anchors-only success.
 - **The batch item cap (1..50) is declared in the input schema** (`minItems`/`maxItems`)
   and an over-cap call names the constraint ("must have between 1 and 50 items") instead of
   a generic message.
@@ -52,7 +61,7 @@ Behaviour Conformance v1 gate (now run in CI).
 
 ### Changed
 
-- **Tool surface cut ~7,282t → ~4,165t** by suppressing every tool's `outputSchema`
+- **Tool surface cut ~7,282t → ~4,180t** by suppressing every tool's `outputSchema`
   (`output_schema=None`; 43% of the old surface, a field no model reads and the MCP spec
   makes optional) and disabling `$ref` dereferencing. `structuredContent` is unaffected.
 - **resolve_disease standard/full now return the fenced `definition`**, so `response_mode`

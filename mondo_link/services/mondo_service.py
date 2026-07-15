@@ -9,8 +9,10 @@ silently collapsing ambiguity.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import TYPE_CHECKING, Any
 
+from mondo_link.constants import XREF_PREFIXES
 from mondo_link.exceptions import InvalidInputError, NotFoundError
 from mondo_link.identifiers import normalize_xref
 from mondo_link.mcp.untrusted_content import (
@@ -25,6 +27,7 @@ from mondo_link.services.shaping import (
     select_fields,
     shape_disease,
     shape_search_hit,
+    validate_fields,
 )
 
 if TYPE_CHECKING:
@@ -243,6 +246,10 @@ class MondoService:
             "xrefs": self._grouped_xrefs(mondo_id),
             "mondo_version": self._mondo_version(),
         }
+        # Reject an unknown fields root against the FULL record (before shaping), so
+        # fields=["__bogus__"] is invalid_input naming the projectable keys -- not a
+        # silent anchors-only success (Response-Envelope v1.1).
+        validate_fields(payload, fields)
         final = select_fields(shape_disease(payload, response_mode), fields)
         # Enforce limits over the fenced objects the FINAL response actually
         # emits: minimal mode / a sparse fieldset may project the definition
@@ -400,25 +407,29 @@ class MondoService:
         self,
         term: str,
         *,
-        prefixes: list[str] | None = None,
+        prefixes: Sequence[str] | None = None,
         response_mode: str = DEFAULT_RESPONSE_MODE,
     ) -> dict[str, Any]:
         """Return all cross-ontology mappings for a term, grouped by prefix."""
         mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
-        normalized = [p.strip().upper() for p in prefixes if p.strip()] if prefixes else None
-        if normalized:
-            # Reject an unrecognised prefix (Response-Envelope v1.1: silent omission is
-            # not compliant). A bogus source that matched nothing used to return
-            # count:0/success:true -- indistinguishable from a term with no such xref.
-            available = self.repo.xref_prefixes()
-            unknown = sorted({p for p in normalized if p not in available})
+        normalized: list[str] | None = None
+        if prefixes is not None:
+            # Validate the RAW values BEFORE normalising. Stripping first would turn a
+            # blank/whitespace prefix into "" and drop it, so `prefixes=[" "]` would
+            # silently become an unfiltered call returning EVERY source -- the same
+            # silent-omission bug (Response-Envelope v1.1). A blank or unrecognised
+            # source is invalid_input, not a no-op. (The tool schema also enforces the
+            # closed enum at the MCP layer; this guards direct/service callers.)
+            valid = {p.upper() for p in XREF_PREFIXES}
+            unknown = sorted({p for p in prefixes if p.strip().upper() not in valid})
             if unknown:
                 raise InvalidInputError(
-                    "prefixes references cross-reference source(s) not present in Mondo.",
+                    "prefixes references unknown cross-reference source(s).",
                     field="prefixes",
-                    allowed=sorted(available),
+                    allowed=list(XREF_PREFIXES),
                 )
+            normalized = [p.strip().upper() for p in prefixes]
         mappings = self._grouped_xrefs(mondo_id, normalized)
         return {
             "mondo_id": mondo_id,
