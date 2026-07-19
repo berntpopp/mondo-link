@@ -1,5 +1,8 @@
 # mondo-link → beyond 9/10 Implementation Plan
 
+> Historical record — this document records the implementation plan as of its date. Current
+> behavior is defined by implemented code, standards, release evidence, and tests.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Ship the already-committed MCP best-practice fixes to the live server, then add acronym/fuzzy resolution, batch tools, an `ambiguous_query` regression, and a deploy-freshness guard — pushing the server beyond 9/10.

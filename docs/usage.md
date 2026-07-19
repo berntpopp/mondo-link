@@ -1,7 +1,7 @@
 # Usage
 
-All tools are read-only and return a JSON envelope: `{success, ...payload,
-_meta}` on success, or `{success: false, error_code, message, retryable,
+The registered Mondo tools are read-only. Tool calls handled by the shared envelope return
+`{success, ...payload, _meta}` on success, or `{success: false, error_code, message, retryable,
 recovery_action, _meta}` on error. `_meta.next_commands` lists ready-to-call
 follow-ups — follow them rather than guessing. `response_mode` ∈ `minimal |
 compact | standard | full` (default `compact`). Every record payload echoes
@@ -94,8 +94,8 @@ resolve_xref(xref_id="OMIM:182212", limit=50, offset=0)
    total, returned, limit, offset, truncated, next_offset?, ...}
 ```
 
-`map_cross_ontology(term, prefixes=None, fields=)` lists a term's mappings grouped
-by prefix (`fields=["mappings.OMIM"]` for a sparse projection).
+`map_cross_ontology(term, prefixes=None)` lists a term's mappings grouped by
+prefix; pass `prefixes=["OMIM"]` to restrict the returned mapping groups.
 
 ```
 map_cross_ontology(term="MONDO:0008426", prefixes=["OMIM", "ORPHA"])

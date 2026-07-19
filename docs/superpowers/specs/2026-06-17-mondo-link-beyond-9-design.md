@@ -2,6 +2,10 @@
 
 - **Date:** 2026-06-17
 - **Status:** Approved (brainstorming complete) → ready for implementation planning
+
+> Historical record — this document records the design as of its date. Current behavior is
+> defined by implemented code, standards, release evidence, and tests.
+
 - **Branch:** `mondo-link-beyond-9` (based on `c57f5e4`)
 - **Author:** senior MCP engineering pass (Claude Code)
 
