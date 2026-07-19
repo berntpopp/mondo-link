@@ -2,6 +2,10 @@
 
 **Date:** 2026-06-16
 **Status:** Approved scope (brainstorming forks locked by user)
+
+> Historical record — this document records the design as of its date. Current behavior is
+> defined by implemented code, standards, release evidence, and tests.
+
 **Author:** mondo-link contributors
 
 ## 1. Purpose
