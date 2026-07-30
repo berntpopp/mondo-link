@@ -30,6 +30,7 @@
     "digest": "sha256:c588ebf0141f1cf8cb30bbc0a0ef545dc12045402ddaaf7e4ecc4d1b236a9191",
     "reproducible_rollback": false
   },
+  "data_identity_contract": "unadopted",
   "runtime_cache": {
     "path": "/data",
     "eviction": "operator-managed persistent SQLite cache rebuilt from the declared upstream live sources",
