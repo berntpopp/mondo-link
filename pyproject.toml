@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "mondo-link"
-version = "0.4.0"
+version = "0.4.1"
 description = "MCP/API server that grounds disease work in the Mondo Disease Ontology"
 readme = "README.md"
 license = { text = "MIT" }
@@ -72,7 +72,12 @@ line-length = 100
 target-version = "py312"
 
 [tool.ruff.lint]
-extend-select = [
+# `select` (NOT `extend-select`): ruff 0.16 grows the implicit default rule set
+# from 59 to 413 rules, so `extend-select` would silently inherit ~350 rules this
+# project never opted into. This list already supersets ruff's pre-0.16 default
+# (E4/E7/E9 + F), so the enforced policy is byte-identical to before -- it is now
+# pinned to exactly what we chose instead of tracking an upstream default.
+select = [
     "E", "W", "F", "I", "N", "UP", "B", "C4", "S", "T20", "SIM", "RUF",
 ]
 ignore = [

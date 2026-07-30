@@ -6,6 +6,51 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-07-30
+
+Maintenance release. **Dependabot coverage was added to this repository for the first
+time** and the drift that its absence had hidden was swept. No runtime behaviour change.
+
+### Added
+
+- **`.github/dependabot.yml` — this repo had never been watched.** Its standing "0 open
+  Dependabot PRs" signalled a missing watcher, not health: without a config, Dependabot
+  runs *security* updates only, so the single automated bump this repo ever received was
+  the mcp 1.28.1 security PR (#29), and no *version* update ever ran for Python deps,
+  pinned GitHub Actions or the digest-pinned Docker base. Adopts the fleet-canonical
+  config (uv at `/`, github-actions at `/`, docker + docker-compose at `/docker`; weekly
+  Monday Europe/Berlin, staggered 04:00/04:15/04:30/04:45, limit 5).
+
+### Changed
+
+- **Swept the accumulated lockfile drift** (`uv lock --upgrade`, 30 packages). Runtime:
+  fastapi 0.137.1→0.141.1, uvicorn 0.49.0→0.52.0, fastmcp 3.4.4→3.4.5, mcp 1.28.1→1.29.0,
+  typer 0.26.7→0.27.0, websockets 16.0→17.0, sse-starlette 3.4.4→3.4.6, certifi
+  2026.5.20→2026.7.22, plus transitive bumps. Dev: ruff 0.15.17→0.16.0, mypy 2.1.0→2.3.0,
+  pytest 9.1.0→9.1.1, coverage 7.14.1→7.15.2. `pyproject` floors are unchanged — this
+  repo's convention is a permissive floor plus a major upper bound, and every locked
+  version stays inside its declared bound.
+- **Ruff rule selection is pinned with `select` instead of `extend-select`.** ruff 0.16
+  grows the implicit default rule set from 59 to 413 rules, which `extend-select` would
+  silently inherit. The rule list is unchanged and already supersets ruff's pre-0.16
+  default (E4/E7/E9 + F), so the enforced policy is byte-identical — it is now decided
+  here rather than upstream.
+- **Bumped the pinned GitHub Actions** (all SHAs verified against upstream tag refs, with
+  annotated tags dereferenced): `actions/checkout` v7.0.0 → v7.0.1 and, in
+  `container-security.yml`, v6.0.3 → v7.0.1 so all five call sites are one version;
+  `actions/setup-python` v6 → v7.0.0; `astral-sh/setup-uv` v8.2.0 → v9.0.0.
+- **Bumped the digest-pinned `python:3.12-slim` base** from `sha256:423ed6ab`
+  (3.12.13-slim-trixie, 2026-06-24) to `sha256:57cd7c3a` (3.12.13-slim-trixie,
+  2026-07-14) — same Python, same Debian series, three weeks of OS package updates.
+  Verified by a full local `docker build`.
+
+### Fixed
+
+- **Corrected a lying SHA-pin comment.** `github/codeql-action` was labelled `# v4`, but
+  that pin is an annotated *tag object* which dereferences to v4.35.3 — the comment named
+  a floating major while the pin is immutable. The comment now names the real version; the
+  SHA is deliberately unchanged.
+
 ## [0.4.0] - 2026-07-15
 
 MCP contract hardening in response to the live fleet audit (issue #25: 9 confirmed
