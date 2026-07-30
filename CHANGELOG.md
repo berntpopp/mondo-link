@@ -6,6 +6,44 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-07-30
+
+Ships and tests on Python 3.14. No runtime behaviour change.
+
+### Changed
+
+- **Runtime interpreter is now Python 3.14.** `docker/Dockerfile` re-bases both the
+  `builder` and `prepared` stages onto
+  `python:3.14-slim@sha256:cea0e6040540fb2b965b6e7fb5ffa00871e632eef63719f0ea54bca189ce14a6`,
+  the fleet-current digest (clingen, mgi, orphanet and 10 further siblings already run
+  it). The in-image pip cleanup already used `python*` globs and needed no edit.
+- **`container-release.json` `data.image_allowlist` repointed to `python3.14`.** This is
+  the coupling that made Dependabot's Dockerfile-only bump unlandable: the router's OCI
+  content inspector matches those paths literally against tar member names, so re-basing
+  relocates the declared data-bearing files and the allowlist then matches nothing.
+  Verified against the exported OCI layers of an actual local build — all four members
+  (two under `home/app/web/`, two under `opt/venv/lib/python3.14/site-packages/`) match
+  the declared list exactly.
+- **CI now tests on the interpreter the image ships.** `ci.yml` moves `python-version`
+  3.12 → 3.14. This is the substantive half of the change: before it, no gate had ever
+  executed the 3.14 runtime that a bare base bump would have deployed.
+- **`uvicorn[standard]` floor raised `>=0.46.0` → `>=0.52.0`.** 0.52.0 is what `uv.lock`
+  has pinned since 0.4.1, so the floor now states a version this repo actually
+  exercises.
+- Classifiers gain `Programming Language :: Python :: 3.14`.
+
+### Notes
+
+- **`requires-python` stays `>=3.12`, and so do ruff `target-version` and mypy
+  `python_version`.** Raising the floor to `>=3.14` was tried and reverted on CI
+  evidence: the pinned reusable workflow `genefoundry-router/_container-ci.yml@86b11f7e`
+  sets up only Python 3.12 and then runs `uv lock --check` in the caller repo, which
+  aborts with `No interpreter found for Python >=3.14 in managed installations or search
+  path`. Fixing that properly means re-pinning the reusable workflow, which is
+  operator-gated and out of scope. The floor is a packaging lower bound, not a claim
+  about the tested runtime; the tested runtime is 3.14 and matches the image.
+  orphanet-link reached the same conclusion independently in its own 3.14 migration.
+
 ## [0.4.1] - 2026-07-30
 
 Maintenance release. **Dependabot coverage was added to this repository for the first
