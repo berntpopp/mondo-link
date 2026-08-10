@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-10
+
+Maintenance release for the consolidated Dependabot refresh. No application
+behaviour changed.
+
+### Changed
+
+- Refreshed the locked Python dependency set, including the coordinated
+  `cryptography` 50.0.0 update, and raised exercised dependency floors for
+  uvicorn, Typer, FastMCP, and Ruff to match the resolved environment.
+- Re-pinned the reusable container CI and release workflows to the released
+  GeneFoundry router v0.7.6 standard at
+  `84c6ac1fc0eb26f7dfa093cc6394eee3c44d4222`.
+
 ## [0.4.2] - 2026-07-30
 
 Ships and tests on Python 3.14. No runtime behaviour change.
