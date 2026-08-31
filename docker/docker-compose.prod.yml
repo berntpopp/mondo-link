@@ -35,7 +35,7 @@ services:
     cap_drop: !override
       - ALL
     init: true
-    restart: on-failure
+    restart: unless-stopped
     mem_limit: !reset null
     cpus: !reset null
     pids_limit: !reset null
