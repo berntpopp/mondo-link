@@ -6,6 +6,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-08-31
+
+- Updated fleet dependencies and immutable CI action pins, including the trusted
+  router container workflows.
+
 ## [0.4.3] - 2026-08-10
 
 Maintenance release for the consolidated Dependabot refresh. No application
