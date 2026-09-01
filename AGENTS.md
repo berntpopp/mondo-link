@@ -73,6 +73,30 @@ a redeploy, also run `make verify-deploy URL=<server>/health`: it pipes the live
 `git_sha` matches local HEAD — the guard against shipping a green local tree whose
 fixes never reached the running container.
 
+## Fleet deploy contract
+
+- `docker/docker-compose.npm.yml` is the file the fleet controller
+  (`strato_v6_docker_npm`) deploys and validates. Every service there declares
+  `user: "<uid>:<gid>"` numerically — this image's own uid:gid from
+  `docker/Dockerfile` (currently `999:999`), never copied from a sibling
+  `-link` repo.
+- `user` must **not** appear in the Compose files listed in
+  `container-release.json` (`docker/docker-compose.yml`,
+  `docker/docker-compose.prod.yml`) — the shared release gate
+  (`container_release.py validate-compose`) forbids it there.
+- Both rules are enforced by `tests/unit/test_deploy_overlay_user.py`.
+- **Release checklist** (fleet controller pulls a tagged, attested image — it
+  never builds from source): bump `pyproject.toml`, `uv lock`, add a
+  `CHANGELOG.md` heading `## [x.y.z] - YYYY-MM-DD`, bump `CITATION.cff`
+  `version:` **and** `date-released:` to the release date — unlike some
+  sibling repos, mondo-link's own release process updates `date-released`
+  every release, and `tests/unit/test_version_single_source.py` hardcodes the
+  current `version`/`date-released` pair, so it must be updated in the same
+  commit or CI fails — then tag `vx.y.z`, then approve the `release`
+  environment gate via
+  `gh api repos/berntpopp/mondo-link/actions/runs/<id>/pending_deployments`
+  (may need approving twice; `status: waiting` is the gate).
+
 ## Conventions
 
 - Python 3.12+, `uv`, hatchling. Add deps via `pyproject.toml`, then `uv lock`.
