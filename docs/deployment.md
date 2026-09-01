@@ -18,6 +18,38 @@ survives restarts.
 Backends are unauthenticated by design and MUST be reachable only through the
 GeneFoundry router / reverse proxy — never published directly.
 
+## Fleet deploy contract (strato_v6_docker_npm)
+
+`docker/docker-compose.npm.yml` is the overlay the fleet controller repo
+(`strato_v6_docker_npm`) actually deploys and validates — it pulls the
+released, attested `ghcr.io/berntpopp/mondo-link` image at a pinned digest and
+never builds from source. Every service in that file must declare a numeric
+`user: "<uid>:<gid>"` (currently `999:999`, this image's own uid:gid from
+`docker/Dockerfile`) because the controller's runtime observer proves the
+effective uid from `/proc`. The release Compose files named in
+`container-release.json` (`docker/docker-compose.yml`,
+`docker/docker-compose.prod.yml`) must **not** declare `user` — the shared
+release gate (`container_release.py validate-compose`) forbids it there.
+`tests/unit/test_deploy_overlay_user.py` guards both rules.
+
+Release checklist enforced by this repo: bump `pyproject.toml`, run `uv lock`,
+add a `CHANGELOG.md` heading `## [x.y.z] - YYYY-MM-DD`, bump `CITATION.cff`
+`version:` **and** `date-released:` to the release date (unlike some sibling
+repos, mondo-link updates `date-released` on every release — and
+`tests/unit/test_version_single_source.py` hardcodes the current
+`version`/`date-released` pair, so it must change in the same commit), tag
+`vx.y.z`, then approve the `release` environment gate:
+`gh api repos/berntpopp/mondo-link/actions/runs/<id>/pending_deployments`
+(`status: waiting` marks the gate; may need approving twice).
+
+Self-check that the overlay still projects cleanly for the fleet controller:
+
+```bash
+MONDO_LINK_IMAGE="ghcr.io/berntpopp/mondo-link@sha256:<64 hex>" docker compose -f docker/docker-compose.npm.yml config --format json > /tmp/r.json
+# from strato_v6_docker_npm:
+uv run python -c "import sys,json; sys.path.insert(0,'scripts'); from utils.deployment_preflight import canonical_projection; canonical_projection(json.load(open('/tmp/r.json')), project='mondo-link'); print('PROJECTION OK')"
+```
+
 ## Configuration
 
 Settings are read from the environment with the `MONDO_LINK_` prefix; nested
