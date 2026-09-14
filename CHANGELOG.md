@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.6] - 2026-09-14
+
+Maintenance release.
+
 ## [0.4.5] - 2026-09-02
 
 - Deploy: declare the image's numeric uid:gid in docker/docker-compose.npm.yml so the fleet
