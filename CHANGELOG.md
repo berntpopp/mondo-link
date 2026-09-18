@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.4.7] - 2026-09-18
+
+Maintenance release for consolidated Dependabot updates and workflow pins.
+
 ## [0.4.6] - 2026-09-14
 
 Maintenance release.
