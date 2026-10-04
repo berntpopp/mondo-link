@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-04
+
+### Added
+
+- FTS5 trigram fuzzy matching across MONDO primary labels and synonym tables (#86).
+- Return matched synonym metadata (`matched_synonym`, `matched_synonym_metadata`) and numeric `match_confidence` in standard response envelopes.
+- Fall back to synonym matching and rank by match quality in disease resolution and search endpoints when exact primary label matching yields no results.
+
 ## [0.4.9] - 2026-10-03
 
 - Update FastAPI and pytest-mock to the current dependency releases.

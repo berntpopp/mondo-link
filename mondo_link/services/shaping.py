@@ -253,6 +253,8 @@ def shape_search_hit(
         "name": hit.get("name"),
         "score": hit.get("score"),
     }
+    if hit.get("matched_synonym"):
+        out["matched_synonym"] = hit.get("matched_synonym")
     definition = hit.get("definition")
     if mode in ("standard", "full"):
         if definition:

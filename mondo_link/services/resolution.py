@@ -35,6 +35,51 @@ _LABEL_MATCH_TYPE = {
     "narrow_synonym": "related_synonym",
 }
 
+#: Deterministic confidence by match_type. Exact identity lookups (id / primary
+#: label) are 1.0; an exact synonym is near-certain (0.95); an xref reverse-map
+#: slightly less (0.9); a related synonym weaker (0.8); a fuzzy fallback is 0.6.
+MATCH_CONFIDENCE: dict[str, float] = {
+    "mondo_id": 1.0,
+    "primary": 1.0,
+    "exact_synonym": 0.95,
+    "xref": 0.9,
+    "related_synonym": 0.8,
+    "fuzzy": 0.6,
+}
+
+
+def confidence_for(match_type: str) -> float:
+    """Numeric confidence in [0, 1] for a resolve match_type (conservative default)."""
+    return MATCH_CONFIDENCE.get(match_type, 0.6)
+
+
+class ResolutionDetail(tuple[str, str]):
+    """Tuple-compatible resolution outcome carrying provenance and confidence."""
+
+    match_type: str
+    mondo_id: str
+    matched_synonym: str | None
+    matched_metadata: dict[str, Any] | None
+    confidence: float
+
+    def __new__(
+        cls,
+        match_type: str,
+        mondo_id: str,
+        *,
+        matched_synonym: str | None = None,
+        matched_metadata: dict[str, Any] | None = None,
+        confidence: float | None = None,
+    ) -> ResolutionDetail:
+        instance = super().__new__(cls, (match_type, mondo_id))
+        instance.match_type = match_type
+        instance.mondo_id = mondo_id
+        instance.matched_synonym = matched_synonym
+        instance.matched_metadata = matched_metadata
+        instance.confidence = confidence if confidence is not None else confidence_for(match_type)
+        return instance
+
+
 #: Fuzzy thresholds (tuned against bm25-derived scores; repo.search returns
 #: ``score = round(-bm25, 4)`` where higher = more relevant). A near-miss resolves
 #: only when the top hit clears an absolute floor AND dominates the runner-up by a
@@ -124,7 +169,7 @@ class Resolver:
 
     def classify_resolution(
         self, raw: str, *, fuzzy: bool = True, field: str = "term"
-    ) -> tuple[str, str]:
+    ) -> ResolutionDetail:
         """Resolve ``raw`` and report how the match was made (``match_type``).
 
         Cascade: malformed-MONDO-id guard -> MONDO id (obsolete -> ``WithdrawnEntryError``)
@@ -152,13 +197,13 @@ class Resolver:
                 raise WithdrawnEntryError(
                     mondo_id, status="obsolete", replaced_by=self._replacement_records(record)
                 )
-            return "mondo_id", mondo_id
+            return ResolutionDetail("mondo_id", mondo_id, confidence=1.0)
         if infer_xref_source(raw):
             normalized = normalize_xref(raw)
             if normalized:
                 matches = self._repo.mondo_for_xref(normalized.upper(), limit=2)
                 if matches:
-                    return "xref", str(matches[0]["mondo_id"])
+                    return ResolutionDetail("xref", str(matches[0]["mondo_id"]), confidence=0.9)
                 raise NotFoundError(f"No Mondo term cross-references {normalized}.")
         candidates = self._repo.resolve_label(raw.upper())
         if not candidates:
@@ -168,25 +213,76 @@ class Resolver:
         distinct = {c["mondo_id"] for c in candidates}
         if len(distinct) == 1:
             best = candidates[0]
-            return _LABEL_MATCH_TYPE.get(best["label_type"], "primary"), str(best["mondo_id"])
+            match_type = _LABEL_MATCH_TYPE.get(best["label_type"], "primary")
+            matched_syn = best.get("matched_label") if match_type != "primary" else None
+            meta = (
+                {"matched_label": best.get("matched_label"), "label_type": best.get("label_type")}
+                if matched_syn
+                else None
+            )
+            return ResolutionDetail(
+                match_type,
+                str(best["mondo_id"]),
+                matched_synonym=matched_syn,
+                matched_metadata=meta,
+                confidence=confidence_for(match_type),
+            )
         raise AmbiguousQueryError(
             f"'{raw}' matches {len(distinct)} Mondo terms; pick one and call get_disease.",
             candidates=self._label_candidates(candidates),
         )
 
-    def _fuzzy_or_not_found(self, raw: str) -> tuple[str, str]:
-        """Exact-label miss: try a conservative FTS-based fuzzy resolution.
+    def _fuzzy_or_not_found(self, raw: str) -> ResolutionDetail:
+        """Exact-label miss: try a conservative synonym fuzzy / FTS resolution."""
+        search_syn = getattr(self._repo, "search_synonyms", None)
+        if search_syn is not None:
+            syn_hits = search_syn(raw, limit=FUZZY_SEARCH_POOL)
+            if syn_hits:
+                syn_hits = self._demote_non_human(syn_hits)
+                kind, payload = decide_fuzzy(syn_hits)
+                if kind == "resolve" and isinstance(payload, dict):
+                    m_id = str(payload["mondo_id"])
+                    label_type = payload.get("label_type", "exact_synonym")
+                    matched_syn = payload.get("matched_label") if label_type != "primary" else None
+                    meta = (
+                        {"matched_label": payload.get("matched_label"), "label_type": label_type}
+                        if matched_syn
+                        else None
+                    )
+                    return ResolutionDetail(
+                        "fuzzy",
+                        m_id,
+                        matched_synonym=matched_syn,
+                        matched_metadata=meta,
+                        confidence=0.6,
+                    )
+                if kind == "ambiguous" and isinstance(payload, list):
+                    cands = [
+                        {"mondo_id": h["mondo_id"], "name": h["name"], "label_type": "fuzzy"}
+                        for h in payload
+                    ]
+                    raise AmbiguousQueryError(
+                        f"'{raw}' has no exact match; the closest Mondo terms are in candidates.",
+                        candidates=cands,
+                    )
 
-        A clear single winner resolves with ``match_type='fuzzy'``; a near-tie
-        raises ``AmbiguousQueryError`` with candidates; nothing above the score
-        floor raises ``NotFoundError`` (embedding the weak hits as suggestions, so
-        the envelope can still chain straight to ``get_disease``).
-        """
         hits, _ = self._repo.search(raw, limit=FUZZY_SEARCH_POOL, include_obsolete=False)
         hits = self._demote_non_human(hits)
         kind, payload = decide_fuzzy(hits)
         if kind == "resolve" and isinstance(payload, dict):
-            return "fuzzy", str(payload["mondo_id"])
+            matched_syn = payload.get("matched_synonym")
+            meta = (
+                {"matched_label": matched_syn, "label_type": "exact_synonym"}
+                if matched_syn
+                else None
+            )
+            return ResolutionDetail(
+                "fuzzy",
+                str(payload["mondo_id"]),
+                matched_synonym=matched_syn,
+                matched_metadata=meta,
+                confidence=0.6,
+            )
         if kind == "ambiguous" and isinstance(payload, list):
             cands = [
                 {"mondo_id": h["mondo_id"], "name": h["name"], "label_type": "fuzzy"}

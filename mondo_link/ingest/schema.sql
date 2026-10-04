@@ -15,15 +15,24 @@ CREATE TABLE term (
 CREATE INDEX idx_term_name_upper ON term (name_upper);
 
 CREATE TABLE term_lookup (
-    lookup_label TEXT NOT NULL,
-    mondo_id     TEXT NOT NULL,
-    label_type   TEXT NOT NULL
+    lookup_label  TEXT NOT NULL,
+    mondo_id      TEXT NOT NULL,
+    label_type    TEXT NOT NULL,
+    matched_label TEXT
 );
 CREATE INDEX idx_term_lookup ON term_lookup (lookup_label);
 
 CREATE VIRTUAL TABLE term_fts USING fts5 (
     mondo_id UNINDEXED, name, synonyms, definition,
     tokenize = 'porter unicode61'
+);
+
+CREATE VIRTUAL TABLE synonym_trigram USING fts5 (
+    mondo_id UNINDEXED,
+    lookup_label,
+    label_type UNINDEXED,
+    matched_label UNINDEXED,
+    tokenize = 'trigram'
 );
 
 CREATE TABLE mondo_parent (

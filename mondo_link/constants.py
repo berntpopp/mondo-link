@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Literal, get_args
 
-#: Bumped whenever the on-disk SQLite schema changes. v2 added xref.object_label
-#: (the target term's human-readable name, from SSSOM); a rebuild populates it.
-SCHEMA_VERSION = 2
+#: Bumped whenever the on-disk SQLite schema changes. v3 adds synonym_trigram
+#: (an FTS5 trigram virtual table for fuzzy synonym matching across MONDO labels).
+SCHEMA_VERSION = 3
 
 #: The Mondo ontology root term ("disease or disorder").
 MONDO_ROOT = "MONDO:0000001"

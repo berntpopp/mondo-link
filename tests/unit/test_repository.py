@@ -106,19 +106,24 @@ def _insert_terms(conn: sqlite3.Connection) -> None:
 
 def _insert_lookup(conn: sqlite3.Connection) -> None:
     rows = [
-        ("DISEASE OR DISORDER", ROOT, "primary"),
-        ("NERVOUS SYSTEM DISORDER", NERVOUS, "primary"),
-        ("NEURODEGENERATIVE DISEASE", NEURODEGEN, "primary"),
-        ("HUNTINGTON DISEASE", HD, "primary"),
-        ("HD", HD, "exact_synonym"),
-        ("CHOREA MAJOR", HD, "related_synonym"),
-        ("RARE DISEASE", RARE, "primary"),
+        ("DISEASE OR DISORDER", ROOT, "primary", "disease or disorder"),
+        ("NERVOUS SYSTEM DISORDER", NERVOUS, "primary", "nervous system disorder"),
+        ("NEURODEGENERATIVE DISEASE", NEURODEGEN, "primary", "neurodegenerative disease"),
+        ("HUNTINGTON DISEASE", HD, "primary", "Huntington disease"),
+        ("HD", HD, "exact_synonym", "HD"),
+        ("CHOREA MAJOR", HD, "related_synonym", "chorea major"),
+        ("RARE DISEASE", RARE, "primary", "rare disease"),
         # ambiguous label: two distinct ids share "shared label"
-        ("SHARED LABEL", HD, "exact_synonym"),
-        ("SHARED LABEL", NEURODEGEN, "related_synonym"),
+        ("SHARED LABEL", HD, "exact_synonym", "shared label"),
+        ("SHARED LABEL", NEURODEGEN, "related_synonym", "shared label"),
     ]
     conn.executemany(
-        "INSERT INTO term_lookup (lookup_label, mondo_id, label_type) VALUES (?, ?, ?)", rows
+        "INSERT INTO term_lookup (lookup_label, mondo_id, label_type, matched_label) VALUES (?, ?, ?, ?)",
+        rows,
+    )
+    conn.executemany(
+        "INSERT INTO synonym_trigram (mondo_id, lookup_label, label_type, matched_label) VALUES (?, ?, ?, ?)",
+        [(r[1], r[3], r[2], r[3]) for r in rows],
     )
 
 
@@ -261,8 +266,12 @@ def test_get_term_missing(repo: MondoRepository) -> None:
 
 
 def test_resolve_label_primary_and_synonym(repo: MondoRepository) -> None:
-    assert repo.resolve_label("HUNTINGTON DISEASE") == [{"mondo_id": HD, "label_type": "primary"}]
-    assert repo.resolve_label("HD") == [{"mondo_id": HD, "label_type": "exact_synonym"}]
+    assert repo.resolve_label("HUNTINGTON DISEASE") == [
+        {"mondo_id": HD, "label_type": "primary", "matched_label": "Huntington disease"}
+    ]
+    assert repo.resolve_label("HD") == [
+        {"mondo_id": HD, "label_type": "exact_synonym", "matched_label": "HD"}
+    ]
 
 
 def test_resolve_label_ambiguous(repo: MondoRepository) -> None:

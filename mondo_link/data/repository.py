@@ -114,67 +114,138 @@ class MondoRepository:
     def resolve_label(self, label: str) -> list[dict[str, Any]]:
         """Resolve a label/synonym to candidate ``(mondo_id, label_type)`` rows."""
         rows = self._conn.execute(
-            "SELECT mondo_id, label_type FROM term_lookup WHERE lookup_label = ?",
+            "SELECT mondo_id, label_type, matched_label FROM term_lookup WHERE lookup_label = ?",
             (label.upper(),),
         ).fetchall()
-        return [{"mondo_id": r["mondo_id"], "label_type": r["label_type"]} for r in rows]
+        return [
+            {
+                "mondo_id": r["mondo_id"],
+                "label_type": r["label_type"],
+                "matched_label": dict(r).get("matched_label"),
+            }
+            for r in rows
+        ]
 
     def search(
         self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
     ) -> tuple[list[dict[str, Any]], int]:
         """Full-text search over name/synonyms/definition; returns ``(rows, total)``.
 
-        Ranking is NOT raw bm25. Two priors are applied IN SQL -- so they order the whole
-        match set BEFORE the limit/offset window, which a post-page re-sort cannot do (a
-        rank-9 human term can never be lifted into a limit-5 page after the fact):
-
-        1. an EXACT primary-label match leads. bm25 length-normalisation otherwise sinks a
-           well-annotated human term (synonyms + a long definition) below a bare
-           veterinary variant that happens to share the query tokens -- so "cystic
-           fibrosis" returned "cystic fibrosis, pig" at rank 0 and the human term at rank 9.
-        2. a HUMAN-disease prior demotes Mondo's non-human-animal branch (root + closure
-           descendants) below human terms, so a name query is never led by livestock.
-
-        ``total`` is a COUNT over the same MATCH (no join), so it stays invariant under
-        ``limit`` -- the two priors reorder rows, they never change the result-set size.
+        Ranking is NOT raw bm25. Three priors are applied IN SQL:
+        1. an EXACT primary-label match leads (rank 0).
+        2. an EXACT synonym match comes next (rank 1).
+        3. a HUMAN-disease prior demotes Mondo's non-human-animal branch below human terms.
         """
         match = self._fts_query(query)
         query_upper = (query or "").strip().upper()
         where = "term_fts MATCH ?"
         if not include_obsolete:
             where += " AND t.is_obsolete = 0"
+        syn_col = (
+            "(SELECT tl.matched_label FROM term_lookup tl WHERE tl.mondo_id = t.mondo_id "
+            "AND tl.lookup_label = ? AND tl.label_type != 'primary' LIMIT 1) AS matched_synonym"
+        )
         sql = (
-            "SELECT f.mondo_id, t.name, t.definition, bm25(term_fts) AS score "  # noqa: S608
+            f"SELECT f.mondo_id, t.name, t.definition, bm25(term_fts) AS score, {syn_col} "  # noqa: S608
             "FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "
             "LEFT JOIN mondo_closure nh ON nh.mondo_id = f.mondo_id AND nh.ancestor_id = ? "
             f"WHERE {where} "
-            "ORDER BY CASE WHEN t.name_upper = ? THEN 0 ELSE 1 END, "
+            "ORDER BY CASE WHEN t.name_upper = ? THEN 0 "
+            "WHEN EXISTS (SELECT 1 FROM term_lookup tl WHERE tl.mondo_id = t.mondo_id AND tl.lookup_label = ?) THEN 1 "
+            "ELSE 2 END, "
             "CASE WHEN nh.mondo_id IS NULL THEN 0 ELSE 1 END, score "
             "LIMIT ? OFFSET ?"
         )
-        count_sql = (
-            "SELECT COUNT(*) AS n FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id "  # noqa: S608
-            f"WHERE {where}"
-        )
+        count_sql = f"SELECT COUNT(*) AS n FROM term_fts f JOIN term t ON t.mondo_id = f.mondo_id WHERE {where}"  # noqa: S608
         try:
             rows = self._conn.execute(
-                sql, (NON_HUMAN_ANIMAL_ROOT, match, query_upper, limit, offset)
+                sql,
+                (
+                    query_upper,
+                    NON_HUMAN_ANIMAL_ROOT,
+                    match,
+                    query_upper,
+                    query_upper,
+                    limit,
+                    offset,
+                ),
             ).fetchall()
             total = int(self._conn.execute(count_sql, (match,)).fetchone()["n"])
         except sqlite3.Error:
             return self._search_like(
                 query, limit=limit, include_obsolete=include_obsolete, offset=offset
             )
+        if total == 0:
+            trigram_hits, trigram_total = self._search_trigram(
+                query, limit=limit, include_obsolete=include_obsolete, offset=offset
+            )
+            if trigram_total > 0:
+                return trigram_hits, trigram_total
         hits = [
             {
                 "mondo_id": r["mondo_id"],
                 "name": r["name"],
                 "definition": r["definition"],
+                "matched_synonym": dict(r).get("matched_synonym"),
                 "score": round(-r["score"], 4) if r["score"] else 0.0,
             }
             for r in rows
         ]
         return hits, total
+
+    @staticmethod
+    def _trigram_query(text: str) -> str:
+        """Build a safe FTS5 trigram MATCH string (tokens >= 3 chars wrapped in quotes)."""
+        tokens = _FTS_TOKEN_RE.findall(text or "")
+        valid = [tok.replace('"', '""') for tok in tokens if len(tok) >= 3]
+        return " ".join(f'"{tok}"' for tok in valid) if valid else '""'
+
+    def search_synonyms(
+        self, query: str, *, limit: int = 15, include_obsolete: bool = False
+    ) -> list[dict[str, Any]]:
+        """Fuzzy/trigram search across MONDO primary labels and synonyms."""
+        hits, _ = self._search_trigram(query, limit=limit, include_obsolete=include_obsolete)
+        return hits
+
+    def _search_trigram(
+        self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
+    ) -> tuple[list[dict[str, Any]], int]:
+        """FTS5 trigram fallback across primary labels and synonyms."""
+        match = self._trigram_query(query)
+        if match == '""':
+            return [], 0
+        where = "synonym_trigram MATCH ?" + ("" if include_obsolete else " AND t.is_obsolete = 0")
+        query_upper = (query or "").strip().upper()
+        sql = (
+            "SELECT s.mondo_id, s.matched_label, s.label_type, t.name, t.definition, "  # noqa: S608
+            "bm25(synonym_trigram) AS score FROM synonym_trigram s JOIN term t ON t.mondo_id = s.mondo_id "
+            "LEFT JOIN mondo_closure nh ON nh.mondo_id = s.mondo_id AND nh.ancestor_id = ? "
+            f"WHERE {where} "
+            "ORDER BY CASE WHEN UPPER(s.lookup_label) = ? THEN 0 WHEN s.label_type = 'primary' THEN 1 ELSE 2 END, "
+            "CASE WHEN nh.mondo_id IS NULL THEN 0 ELSE 1 END, score"
+        )
+        try:
+            rows = self._conn.execute(sql, (NON_HUMAN_ANIMAL_ROOT, match, query_upper)).fetchall()
+        except sqlite3.Error:
+            return [], 0
+        seen: set[str] = set()
+        deduped: list[dict[str, Any]] = []
+        for r in rows:
+            if r["mondo_id"] in seen:
+                continue
+            seen.add(r["mondo_id"])
+            deduped.append(
+                {
+                    "mondo_id": r["mondo_id"],
+                    "name": r["name"],
+                    "definition": r["definition"],
+                    "matched_label": r["matched_label"],
+                    "label_type": r["label_type"],
+                    "matched_synonym": r["matched_label"] if r["label_type"] != "primary" else None,
+                    "score": round(-r["score"], 4) if r["score"] else 0.0,
+                }
+            )
+        return deduped[offset : offset + limit], len(deduped)
 
     def _search_like(
         self, query: str, *, limit: int, include_obsolete: bool, offset: int = 0
