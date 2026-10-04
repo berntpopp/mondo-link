@@ -81,12 +81,14 @@ def _load_terms(conn: sqlite3.Connection, terms: dict[str, dict[str, Any]]) -> t
         "INSERT OR REPLACE INTO term (mondo_id, name, name_upper, definition, is_obsolete, "
         "replaced_by, consider, synonyms, subsets) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)"
     )
-    lookup_sql = "INSERT INTO term_lookup (lookup_label, mondo_id, label_type) VALUES (?, ?, ?)"
+    lookup_sql = "INSERT INTO term_lookup (lookup_label, mondo_id, label_type, matched_label) VALUES (?, ?, ?, ?)"
     fts_sql = "INSERT INTO term_fts (mondo_id, name, synonyms, definition) VALUES (?, ?, ?, ?)"
+    trigram_sql = "INSERT INTO synonym_trigram (mondo_id, lookup_label, label_type, matched_label) VALUES (?, ?, ?, ?)"
 
     term_rows: list[tuple[Any, ...]] = []
-    lookups: list[tuple[str, str, str]] = []
+    lookups: list[tuple[str, str, str, str]] = []
     fts_rows: list[tuple[Any, ...]] = []
+    trigram_rows: list[tuple[str, str, str, str]] = []
     count = 0
     obsolete = 0
 
@@ -94,9 +96,11 @@ def _load_terms(conn: sqlite3.Connection, terms: dict[str, dict[str, Any]]) -> t
         _executemany(conn, term_sql, term_rows)
         _executemany(conn, lookup_sql, lookups)
         _executemany(conn, fts_sql, fts_rows)
+        _executemany(conn, trigram_sql, trigram_rows)
         term_rows.clear()
         lookups.clear()
         fts_rows.clear()
+        trigram_rows.clear()
 
     for mondo_id, term in terms.items():
         name = term.get("name") or ""
@@ -116,11 +120,13 @@ def _load_terms(conn: sqlite3.Connection, terms: dict[str, dict[str, Any]]) -> t
             )
         )
         if name:
-            lookups.append((name.upper(), mondo_id, "primary"))
+            lookups.append((name.upper(), mondo_id, "primary", name))
+            trigram_rows.append((mondo_id, name, "primary", name))
         for syn in synonyms:
             label_type = _SCOPE_TO_LABEL_TYPE.get(syn["scope"])
             if label_type:
-                lookups.append((syn["text"].upper(), mondo_id, label_type))
+                lookups.append((syn["text"].upper(), mondo_id, label_type, syn["text"]))
+                trigram_rows.append((mondo_id, syn["text"], label_type, syn["text"]))
         fts_rows.append((mondo_id, name, syn_text, term.get("definition") or ""))
         count += 1
         if term.get("obsolete"):

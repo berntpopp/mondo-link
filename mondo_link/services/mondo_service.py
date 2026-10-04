@@ -163,7 +163,8 @@ class MondoService:
             raise InvalidInputError(
                 "query must be a non-empty MONDO id, label, or xref.", field="query"
             )
-        match_type, mondo_id = self._resolution.classify_resolution(raw, field="query")
+        res = self._resolution.classify_resolution(raw, field="query")
+        match_type, mondo_id = res
         record = self.repo.get_term(mondo_id)
         if record is None:  # pragma: no cover - defensive
             raise NotFoundError(f"No Mondo term for {mondo_id}.")
@@ -172,9 +173,14 @@ class MondoService:
             "mondo_id": mondo_id,
             "name": record["name"],
             "match_type": match_type,
+            "match_confidence": getattr(res, "confidence", 0.6),
             "obsolete": record["is_obsolete"],
             "mondo_version": self._mondo_version(),
         }
+        if getattr(res, "matched_synonym", None):
+            out["matched_synonym"] = res.matched_synonym
+        if getattr(res, "matched_metadata", None):
+            out["matched_synonym_metadata"] = res.matched_metadata
         # standard/full carry the fenced definition too, so response_mode meaningfully
         # widens the top-level payload (and a standard resolve can skip a get_disease
         # round trip when the label alone is enough). compact/minimal stay lean.
