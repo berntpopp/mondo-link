@@ -1,4 +1,6 @@
 name: mcp-conformance
+env:
+  UV_PYTHON: "3.14"  # no setup-python here; without this uv picks the runner's default
 on:
   pull_request:
   push:

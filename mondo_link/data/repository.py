@@ -476,5 +476,5 @@ def _json_or(value: Any, default: Any) -> Any:
         return default
     try:
         return json.loads(value)
-    except (json.JSONDecodeError, TypeError):  # pragma: no cover - defensive
+    except json.JSONDecodeError, TypeError:  # pragma: no cover - defensive
         return default
