@@ -99,7 +99,7 @@ fixes never reached the running container.
 
 ## Conventions
 
-- Python 3.12+, `uv`, hatchling. Add deps via `pyproject.toml`, then `uv lock`.
+- Python 3.14+, `uv`, hatchling. Add deps via `pyproject.toml`, then `uv lock`.
 - `structlog` logs to **stderr only** — stdout is reserved for the stdio MCP
   protocol. Never `print` to stdout outside the CLI.
 - Files stay under 500 lines; split by responsibility, not layer.
