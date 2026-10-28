@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.5.4] - 2026-10-28
+
+### Fixed
+
+- Re-release of 0.5.3: pin the router reusable workflows to genefoundry-router v0.10.10, whose
+  refreshed control ledger lets the container release pass "Enforce fleet release controls" (0.5.3 was
+  tagged but never published).
+
 ## [0.5.3] - 2026-10-28
 
 ### Security
