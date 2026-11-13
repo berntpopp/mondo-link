@@ -6,6 +6,26 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-13
+
+### Changed
+
+- **Data mode `upstream-live` -> `external-reference`** (genefoundry-router#63 option A). The
+  container no longer downloads from the Monarch PURLs at boot. A one-shot `mondo-data-init`
+  service runs the new `mondo-link-data materialize-data`: it restores the pinned data release
+  `data-mondo-16469cc957537704` (Mondo `releases/2026-11-03`) from this repository's GitHub
+  releases, verifies the `mondo.sqlite.gz` and expanded SQLite SHA-256 and the schema, and
+  atomically selects `/data/current`. The server mounts the volume read-only
+  (`MONDO_LINK_DATA__DB_FILENAME=current/mondo.sqlite`).
+- `/health` adds `release_identity.data_identity` (`expected` from the pin, `actual` re-proved
+  from the served bytes); `container-release.json` adopts `data_identity_contract: runtime-v1`
+  with the `immutable-bundle` smoke profile, so every release proves the data it serves.
+
+### Removed
+
+- `docker/entrypoint.sh` (boot-time `mondo-link-data refresh`) and the compose `refresh`
+  service. `make data` / `make data-refresh` remain for a source checkout.
+
 ### Added
 
 - Data-release pipeline (genefoundry-router#63 option A): `mondo-link-data build --reproducible`

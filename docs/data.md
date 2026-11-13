@@ -13,8 +13,8 @@ make data-status    # uv run mondo-link-data status   — loaded Mondo release +
 ```
 
 `make data` is a **mandatory pre-run step**: with no index the server answers
-`data_unavailable`. In Docker the entrypoint bootstraps the index into the data
-volume on first start (see [deployment.md](deployment.md)).
+`data_unavailable`. Containers instead restore a pinned, digest-verified data
+release built by the `data-release` workflow (see [deployment.md](deployment.md)).
 
 `make data-status` is the operator's freshness check — it prints the loaded Mondo
 release and the row counts without touching the MCP surface (`get_diagnostics`

@@ -89,6 +89,9 @@ predicates omitted.
 Downloads are conditional (ETag / Last-Modified; `304` → no rebuild) and the build is
 atomic under a lock, recording provenance — Mondo release, source validators, counts — in a
 `meta` table. `get_diagnostics` and `make data-status` report the loaded release.
+Containers serve a pinned, content-addressed `data-mondo-<sha16>` data release built
+reproducibly by a weekly, owner-reviewed workflow and restored at startup; `/health`
+reports the served release identity ([deployment](docs/deployment.md)).
 
 Ground every claim in the index and cite the **MONDO id + Mondo release version**. Mondo
 data are CC BY 4.0 (Monarch Initiative); cite:

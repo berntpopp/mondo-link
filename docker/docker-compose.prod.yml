@@ -4,6 +4,15 @@
 #   docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up -d
 
 services:
+  mondo-data-init:
+    build: !reset null
+    image: ${MONDO_LINK_IMAGE:?Set MONDO_LINK_IMAGE to ghcr.io/berntpopp/mondo-link@sha256:<digest>}
+    pull_policy: missing
+    volumes: !override
+      - mondo-data:/data
+    networks: !override
+      - default
+
   mondo-link:
     build: !reset null
     image: ${MONDO_LINK_IMAGE:?Set MONDO_LINK_IMAGE to ghcr.io/berntpopp/mondo-link@sha256:<digest>}
@@ -23,10 +32,11 @@ services:
       MONDO_LINK_LOG_FORMAT: json
       MONDO_LINK_ALLOWED_HOSTS: '["localhost","127.0.0.1","::1","mondo-link.genefoundry.org"]'
       MONDO_LINK_DATA__DATA_DIR: /data
-      MONDO_LINK_DATA__AUTO_BOOTSTRAP: "true"
+      MONDO_LINK_DATA__DB_FILENAME: current/mondo.sqlite
+      MONDO_LINK_DATA__AUTO_BOOTSTRAP: "false"
       MONDO_LINK_DATA__REFRESH_ENABLED: "false"
     volumes: !override
-      - mondo-data:/data
+      - mondo-data:/data:ro
     read_only: true
     tmpfs: !override
       - /tmp:rw,noexec,nosuid,size=512m,mode=1777
@@ -58,8 +68,6 @@ services:
         labels: "service=mondo-link,environment=production"
     networks: !override
       - default
-
-  refresh: !reset null
 
 volumes: !override
   mondo-data:
