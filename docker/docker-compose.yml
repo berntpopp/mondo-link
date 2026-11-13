@@ -1,8 +1,12 @@
 name: mondo-link
 
 services:
-  mondo-link:
-    build:
+  # Restores the pinned Mondo data release (a `data-mondo-*` GitHub release of
+  # this repo, digest-verified) into the volume, then exits. Pins live in
+  # mondo_link/config.py and container-release.json; nothing is downloaded from
+  # the Monarch PURLs at boot.
+  mondo-data-init:
+    build: &build
       context: ..
       dockerfile: docker/Dockerfile
       target: production
@@ -10,7 +14,42 @@ services:
         APP_VERSION: ${APP_VERSION:-0.0.0}
         VCS_REF: ${VCS_REF:-0000000000000000000000000000000000000000}
         BUILD_DATE: ${BUILD_DATE:-1970-01-01T00:00:00Z}
+    image: mondo-link:latest
+    command: ["mondo-link-data", "materialize-data"]
+    environment:
+      MONDO_LINK_IMMUTABLE_DATA__REFERENCE_ROOT: /data
+    volumes:
+      - mondo-data:/data
+    restart: "no"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+          pids: 256
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - mondo-network
+
+  mondo-link:
+    build: *build
+    image: mondo-link:latest
     container_name: mondo-link
+    depends_on:
+      mondo-data-init:
+        condition: service_completed_successfully
     # Dev/local only — loopback-bound (127.0.0.1) so copying this file to a
     # server never publishes the unauthenticated backend on the public IP
     # (Docker would otherwise bind 0.0.0.0 and bypass the host firewall).
@@ -31,26 +70,24 @@ services:
       MONDO_LINK_ALLOWED_HOSTS: '["localhost","127.0.0.1","::1"]'
       MONDO_LINK_LOG_LEVEL: INFO
       MONDO_LINK_LOG_FORMAT: json
+      # Serve the restored release read-only (see docs/deployment.md).
       MONDO_LINK_DATA__DATA_DIR: /data
-      MONDO_LINK_DATA__AUTO_BOOTSTRAP: "true"
-      # Refresh is owned by cron (see docs/deployment.md). To refresh the running
-      # container, run a host cron job:
-      #   docker compose -f docker/docker-compose.yml exec mondo-link mondo-link-data refresh
+      MONDO_LINK_DATA__DB_FILENAME: current/mondo.sqlite
+      MONDO_LINK_DATA__AUTO_BOOTSTRAP: "false"
       MONDO_LINK_DATA__REFRESH_ENABLED: "false"
     volumes:
-      # Persist the built SQLite index across container restarts.
-      - mondo-data:/data
+      - mondo-data:/data:ro
     healthcheck:
       test: ["CMD", "curl", "-f", "-H", "Host: localhost", "http://127.0.0.1:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 120s
+      start_period: 30s
     restart: unless-stopped
     # Container & Deployment Hardening Standard v1 (backported so running the base
-    # file directly is still safe). The built SQLite index lives on the `mondo-data`
-    # named volume (writable); the rootfs is read-only and scratch is an explicit,
-    # size-capped tmpfs (TMPDIR=/tmp in the image).
+    # file directly is still safe). The restored SQLite index lives on the
+    # `mondo-data` named volume (read-only here); the rootfs is read-only and
+    # scratch is an explicit, size-capped tmpfs (TMPDIR=/tmp in the image).
     read_only: true
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=512m,mode=1777
@@ -77,26 +114,6 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
-    networks:
-      - mondo-network
-
-  # Optional: a one-shot refresh runner you can invoke from host cron, e.g.
-  #   17 3 * * *  docker compose -f /path/docker/docker-compose.yml run --rm refresh
-  refresh:
-    profiles: ["tools"]
-    build:
-      context: ..
-      dockerfile: docker/Dockerfile
-      target: production
-      args:
-        APP_VERSION: ${APP_VERSION:-0.0.0}
-        VCS_REF: ${VCS_REF:-0000000000000000000000000000000000000000}
-        BUILD_DATE: ${BUILD_DATE:-1970-01-01T00:00:00Z}
-    entrypoint: ["mondo-link-data", "refresh"]
-    environment:
-      MONDO_LINK_DATA__DATA_DIR: /data
-    volumes:
-      - mondo-data:/data
     networks:
       - mondo-network
 

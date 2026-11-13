@@ -17,6 +17,11 @@ and cross-ontology mapping. It mirrors the sibling `mgi-link` stack/architecture
   merged OBO + SSSOM cross-references with provenance + predicate,
   deprecated/`replaced_by`), and **returns plain dicts**. It raises typed
   exceptions from `mondo_link.exceptions`; it never builds error envelopes.
+  Containers are `external-reference` (genefoundry-router#63 option A): the image
+  restores the pinned `data-mondo-*` release (`mondo_link/config.py` `DATA_*` ==
+  `container-release.json` `data`; a `SCHEMA_VERSION` bump means a new data release
+  + re-pin). Re-pin only in a reviewed PR after the owner-gated `data-release`
+  workflow published it; never add `main` to the `release` environment.
 - **MCP plane** — `mcp/`. Domain-agnostic scaffolding shared with siblings.
   `run_mcp_tool` (in `mcp/envelope.py`) owns `success` / `_meta` and converts
   exceptions into **returned** structured errors (never raised to the client).

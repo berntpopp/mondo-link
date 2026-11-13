@@ -15,38 +15,42 @@
     "startup_timeout_seconds": 300,
     "deployed_compose_files": [
       "docker/docker-compose.npm.yml"
+    ],
+    "auxiliary": [
+      {
+        "name": "mondo-data-init",
+        "role": "init",
+        "egress": "approved-networks",
+        "writable_targets": [
+          "/data",
+          "/tmp"
+        ]
+      }
     ]
   },
   "data": {
-    "mode": "upstream-live",
+    "mode": "external-reference",
+    "release_tag": "data-mondo-16469cc957537704",
+    "digest": "sha256:407194bc603260bc760b78a7d8c391192b77f5511b8e3bec4fcba09d604cd597",
+    "schema_compatibility": [
+      "3"
+    ],
     "image_allowlist": [
       "home/app/web/mondo_link/data/__init__.py",
       "home/app/web/mondo_link/data/repository.py",
       "opt/venv/lib/python3.14/site-packages/mondo_link/data/__init__.py",
       "opt/venv/lib/python3.14/site-packages/mondo_link/data/repository.py",
-    "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/__init__.py",
-    "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/hintdataabc.py",
-    "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/hintdatacode.py",
-    "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/hintdataerror.py"
-    ],
-    "egress_allowlist": [
-      "purl.obolibrary.org",
-      "raw.githubusercontent.com"
-    ],
-    "release_tag": "observed-2026.07.13",
-    "digest": "sha256:c588ebf0141f1cf8cb30bbc0a0ef545dc12045402ddaaf7e4ecc4d1b236a9191",
-    "reproducible_rollback": false
+      "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/__init__.py",
+      "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/hintdataabc.py",
+      "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/hintdatacode.py",
+      "opt/venv/lib/python3.14/site-packages/beartype/_check/cls/hint/data/hintdataerror.py"
+    ]
   },
-  "data_identity_contract": "unadopted",
-  "runtime_cache": {
-    "path": "/data",
-    "eviction": "operator-managed persistent SQLite cache rebuilt from the declared upstream live sources",
-    "deletable_without_authoritative_data_loss": true
-  },
+  "data_identity_contract": "runtime-v1",
   "definitions": {
     "contract": "data-bound"
   },
   "smoke": {
-    "profile": "prepared-live-fixture"
+    "profile": "immutable-bundle"
   }
 }

@@ -7,22 +7,12 @@ make docker-logs        # follow logs
 make docker-down        # stop
 ```
 
-The entrypoint downloads Mondo and builds the local SQLite index before the
-server starts. The index is persisted in the `mondo-data` named volume across
-restarts.
-
-## Refresh
-
-The in-app scheduler is **off**; refresh is owned by cron. To refresh the
-running stack's data, run the one-shot `refresh` service (under the `tools`
-profile) from host cron:
-
-```cron
-17 3 * * *  docker compose -f /opt/mondo-link/docker/docker-compose.yml run --rm refresh
-```
-
-See [`../docs/deployment.md`](../docs/deployment.md) for crontab / systemd timer
-options on bare-metal installs.
+The one-shot `mondo-data-init` service restores the image's pinned,
+digest-verified `data-mondo-*` data release (a GitHub release of this repository)
+into the `mondo-data` volume and exits; the server then mounts that volume
+**read-only**. Nothing is downloaded from the Monarch PURLs at boot and there is
+no refresh service: a new data release arrives with a reviewed re-pin and a new
+image. See [`../docs/deployment.md`](../docs/deployment.md#operator-steps-fleet-host).
 
 ## Ports
 

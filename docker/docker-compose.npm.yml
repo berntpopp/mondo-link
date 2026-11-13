@@ -4,19 +4,58 @@
 # unified container serves the FastAPI REST API on / and the MCP streamable-HTTP
 # transport on /mcp via a single port (8000). NPM reverse-proxies to the fixed
 # container_name on the shared external npm_default network. Mirrors the
-# gtex-link / mgi-link fleet pattern. First boot builds the local Mondo SQLite
-# index from the OBO + SSSOM release into the persisted data volume.
+# gtex-link / mgi-link fleet pattern. mondo-data-init restores the pinned,
+# digest-verified data release into the volume; the server reads it read-only.
 #
 #   docker compose -f docker/docker-compose.npm.yml --env-file .env.docker up -d
 name: mondo-link-npm
 
 services:
+  # Restores the pinned, digest-verified Mondo data release (a `data-mondo-*`
+  # GitHub release of this repo) into the volume and exits; only the private
+  # stack network, no proxy network. No upstream download at boot.
+  mondo-data-init:
+    image: ${MONDO_LINK_IMAGE:?Set MONDO_LINK_IMAGE to ghcr.io/berntpopp/mondo-link@sha256:<digest>}
+    pull_policy: missing
+    command: ["mondo-link-data", "materialize-data"]
+    environment:
+      - MONDO_LINK_IMMUTABLE_DATA__REFERENCE_ROOT=/data
+    volumes:
+      - mondo-data:/data
+    networks:
+      - mondo_link_internal_net
+    restart: "no"
+    # This image's own uid:gid (docker/Dockerfile); same as the server.
+    user: "999:999"
+    read_only: true
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m,mode=1777
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    init: true
+    deploy:
+      resources:
+        limits:
+          memory: 512m
+          cpus: "1.0"
+          pids: 256
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "50m"
+        max-file: "5"
+
   mondo_link:
     # Deploy pulls the released, attested image; it never builds from source.
     # Pin a digest, not a tag: there is no `latest`, and only a digest is immutable.
     image: ${MONDO_LINK_IMAGE:?Set MONDO_LINK_IMAGE to ghcr.io/berntpopp/mondo-link@sha256:<digest>}
     pull_policy: missing
     container_name: mondo-link-npm
+    depends_on:
+      mondo-data-init:
+        condition: service_completed_successfully
     # NO published host ports - NPM handles all routing via the container name.
     expose:
       - "8000"
@@ -28,22 +67,19 @@ services:
       - 'MONDO_LINK_ALLOWED_HOSTS=["localhost","127.0.0.1","::1","mondo-link.genefoundry.org"]'
       - MONDO_LINK_LOG_LEVEL=${LOG_LEVEL_API:-INFO}
       - MONDO_LINK_LOG_FORMAT=json
+      # Serve the release restored by mondo-data-init, read-only.
       - MONDO_LINK_DATA__DATA_DIR=/data
-      # Build the local SQLite index on first boot (persisted in the volume).
-      - MONDO_LINK_DATA__AUTO_BOOTSTRAP=true
-      # No cron sidecar in the NPM deploy; Mondo is a slowly-changing ontology,
-      # so refresh stays manual (host: docker compose ... exec mondo-link
-      # mondo-link-data refresh). The persisted index serves until then.
+      - MONDO_LINK_DATA__DB_FILENAME=current/mondo.sqlite
+      - MONDO_LINK_DATA__AUTO_BOOTSTRAP=false
       - MONDO_LINK_DATA__REFRESH_ENABLED=false
-    # The image ENTRYPOINT builds the index then exec's the unified server,
-    # reading MONDO_LINK_TRANSPORT/HOST/PORT above; no command override needed.
+    # The image CMD runs the unified server, reading MONDO_LINK_TRANSPORT/HOST/PORT
+    # above; no command override needed.
     healthcheck:
       test: ["CMD", "curl", "-f", "-H", "Host: localhost", "http://127.0.0.1:8000/health"]
       interval: 30s
       timeout: 10s
       retries: 5
-      # First boot downloads + builds the local Mondo SQLite index.
-      start_period: 150s
+      start_period: 30s
     restart: unless-stopped
     # GeneFoundry deploy contract: the fleet controller (strato_v6_docker_npm,
     # scripts/utils/deployment_preflight.py) accepts a declared user only as numeric
@@ -52,11 +88,9 @@ services:
     user: "999:999"
     read_only: true
     tmpfs:
-      # TMPDIR=/tmp (set in the image) - download/build scratch space.
-      - /tmp:rw,noexec,nosuid,size=512m,mode=1777
+      - /tmp:rw,noexec,nosuid,size=256m,mode=1777
     volumes:
-      # Persist the built Mondo SQLite index across container restarts.
-      - mondo-data:/data
+      - mondo-data:/data:ro
     networks:
       - mondo_link_internal_net
       - npm_proxy_network
