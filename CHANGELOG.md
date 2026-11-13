@@ -6,6 +6,28 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- Data-release pipeline (genefoundry-router#63 option A): `mondo-link-data build --reproducible`
+  pins `build_utc` to the OBO's `Last-Modified` and omits the build duration, so the same
+  release files always build to the same SQLite bytes; `mondo-link-data package` writes the
+  content-addressed `data-mondo-<sha16>` assets (gzip bundle, manifest with the Mondo release
+  version, owner authorization, `SHA256SUMS`). `.github/workflows/data-release.yml` downloads
+  each file once per weekly run and publishes through the owner-reviewed `data-release`
+  environment.
+- `release/data-authorization.json`: the repository owner's 2026-11-13 redistribution decision
+  for the CC BY 4.0 Mondo release, with the licence statement, attribution and change notice.
+
+### Fixed
+
+- The ancestor closure was emitted in set order, which varies with `PYTHONHASHSEED`, so two
+  builds of the same release differed byte-for-byte; ancestors are now emitted sorted.
+
+### Changed
+
+- The SQLite snapshot uses a rollback journal instead of WAL so it can be served from a
+  read-only mount.
+
 ## [0.5.6] - 2026-11-13
 
 ### Changed

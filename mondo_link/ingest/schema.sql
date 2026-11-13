@@ -1,4 +1,5 @@
-PRAGMA journal_mode = WAL;
+-- Rollback journal, not WAL: the released snapshot is served from a read-only mount.
+PRAGMA journal_mode = DELETE;
 PRAGMA foreign_keys = OFF;
 
 CREATE TABLE term (
