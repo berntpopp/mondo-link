@@ -7,6 +7,9 @@ rebuild -- the cron job), and ``status`` (print provenance of the existing DB).
 
 from __future__ import annotations
 
+import json
+from email.utils import parsedate_to_datetime
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import typer
@@ -14,7 +17,7 @@ import typer
 from mondo_link.config import settings
 from mondo_link.exceptions import DownloadError
 from mondo_link.ingest.builder import BuildMeta, build_database, read_meta, rebuild
-from mondo_link.ingest.downloader import download_bulk
+from mondo_link.ingest.downloader import REPORT_FILENAMES, download_bulk
 
 if TYPE_CHECKING:
     from mondo_link.config import ServerSettings
@@ -46,7 +49,13 @@ def _print_summary(meta: BuildMeta, *, header: str) -> None:
 
 
 @app.command()
-def build() -> None:
+def build(
+    reproducible: bool = typer.Option(
+        False,
+        "--reproducible",
+        help="Pin build_utc to the OBO's Last-Modified so the file is byte-reproducible.",
+    ),
+) -> None:
     """Force a download and full rebuild of the database."""
     config = get_config()
     try:
@@ -55,8 +64,41 @@ def build() -> None:
         print(f"ERROR: download failed: {exc}")
         raise typer.Exit(code=1) from exc
     paths = {key: download.path(key) for key in download.results}
-    meta = build_database(config, paths=paths, validators=download.validators())
+    build_utc = None
+    if reproducible:
+        obo = download.results.get("obo")
+        if obo is None or not obo.last_modified or paths.get("sssom") is None:
+            print("ERROR: --reproducible needs the OBO Last-Modified header and the SSSOM file.")
+            raise typer.Exit(code=1)
+        build_utc = parsedate_to_datetime(obo.last_modified).isoformat()
+    meta = build_database(
+        config, paths=paths, validators=download.validators(), build_utc=build_utc
+    )
     _print_summary(meta, header="Built Mondo database:")
+
+
+@app.command()
+def package(
+    output: Path = typer.Option(..., help="New directory for the release assets."),
+    revision: str = typer.Option(..., help="Full commit SHA of the transformation code."),
+    authorization: Path = typer.Option(
+        Path("release/data-authorization.json"), help="Owner redistribution authorization."
+    ),
+) -> None:
+    """Package the reproducibly built database as data-release assets; print the manifest."""
+    from mondo_link.ingest.release import package_release
+
+    config = get_config()
+    data_dir = config.data.data_dir
+    manifest = package_release(
+        config.data.db_path,
+        obo=data_dir / REPORT_FILENAMES["obo"],
+        sssom=data_dir / REPORT_FILENAMES["sssom"],
+        authorization=authorization,
+        output=output,
+        revision=revision,
+    )
+    print(json.dumps(manifest, indent=2, sort_keys=True))
 
 
 @app.command()

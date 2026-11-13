@@ -255,8 +255,13 @@ def build_database(
     *,
     paths: dict[str, Path | None],
     validators: dict[str, dict[str, str | None]],
+    build_utc: str | None = None,
 ) -> BuildMeta:
-    """Build the Mondo SQLite index from the release files, atomically, under the lock."""
+    """Build the Mondo SQLite index from the release files, atomically, under the lock.
+
+    A pinned ``build_utc`` (reproducible release build) also drops the build
+    duration, so the same release files always yield the same file bytes.
+    """
     start = time.perf_counter()
     data_dir = config.data.data_dir
     data_dir.mkdir(parents=True, exist_ok=True)
@@ -294,8 +299,8 @@ def build_database(
                     closure_count=closure_count,
                     xref_count=xref_count,
                     mapping_count=mapping_count,
-                    build_utc=datetime.now(tz=UTC).isoformat(),
-                    build_duration_s=round(time.perf_counter() - start, 3),
+                    build_utc=build_utc or datetime.now(tz=UTC).isoformat(),
+                    build_duration_s=None if build_utc else round(time.perf_counter() - start, 3),
                 )
                 _insert_meta(conn, meta)
                 conn.commit()

@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "dataset": "Mondo Disease Ontology release (mondo.obo) and the Mondo SSSOM mappings (mondo.sssom.tsv), and the mondo-link SQLite index derived from them",
+  "redistribution_allowed": true,
+  "reviewer": "Repository owner (explicit operator decision recorded 2026-11-13, genefoundry-router#63 option A)",
+  "reviewed_at": "2026-11-13T00:00:00Z",
+  "interpretation": "This is the repository owner's determination that a derived research-use snapshot may be published as a GitHub release asset. It is not an approval, endorsement, or review by the Monarch Initiative or the Mondo project, and it is not a legal conclusion.",
+  "license": {
+    "spdx": "CC-BY-4.0",
+    "name": "Creative Commons Attribution 4.0 International",
+    "url": "https://creativecommons.org/licenses/by/4.0/",
+    "terms_url": "https://github.com/monarch-initiative/mondo/blob/master/LICENSE",
+    "terms_retrieved": "2026-11-13",
+    "quote": "License: CC-BY 4.0 (https://mondo.monarchinitiative.org/ and https://github.com/monarch-initiative/mondo README 'License' section; the repository LICENSE file is the Creative Commons Attribution 4.0 International public license)."
+  },
+  "changes": "Derived SQLite index built by mondo-link from the Mondo release named in manifest.json (source.mondo_version): terms, synonyms, definitions, hierarchy closure, OBO xrefs and SSSOM mappings reorganised into SQLite tables with a full-text index. Content is not otherwise edited.",
+  "attribution": "Mondo Disease Ontology, Monarch Initiative (https://mondo.monarchinitiative.org/), licensed under CC BY 4.0 (https://creativecommons.org/licenses/by/4.0/). Cite: Vasilevsky NA, Matentzoglu NA, Toro S, et al. Mondo: Unifying diseases for the world, by the world. medRxiv 2022. doi:10.1101/2022.04.13.22273750. This release is a derived SQLite index built by mondo-link; see manifest.json for the Mondo release version.",
+  "disclaimer": "Research use only; not clinical decision support."
+}

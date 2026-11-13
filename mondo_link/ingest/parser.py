@@ -223,7 +223,8 @@ def mondo_closure_pairs(terms: dict[str, dict[str, Any]]) -> Iterator[tuple[str,
         return acc
 
     for mondo_id in terms:
-        for anc in ancestors(mondo_id, frozenset({mondo_id})):
+        # sorted: set order follows PYTHONHASHSEED; release builds must be reproducible.
+        for anc in sorted(ancestors(mondo_id, frozenset({mondo_id}))):
             yield (mondo_id, anc)
 
 
