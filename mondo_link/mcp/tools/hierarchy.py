@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Any
 
+from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
@@ -50,7 +51,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         limit: _ClosureLimit = 200,
         offset: _ClosureOffset = 0,
         response_mode: ResponseMode = "compact",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_ancestors(
                 term, limit=limit, offset=offset, response_mode=response_mode
@@ -87,7 +88,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
         limit: _ClosureLimit = 200,
         offset: _ClosureOffset = 0,
         response_mode: ResponseMode = "compact",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_descendants(
                 term, limit=limit, offset=offset, response_mode=response_mode
@@ -117,7 +118,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
     )
     async def get_disease_parents(
         term: TermStr, response_mode: ResponseMode = "compact"
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_parents(term, response_mode=response_mode)
             payload.setdefault("_meta", {})["next_commands"] = after_parents(payload)
@@ -145,7 +146,7 @@ def register_hierarchy_tools(mcp: FastMCP) -> None:
     )
     async def get_disease_children(
         term: TermStr, response_mode: ResponseMode = "compact"
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_children(term, response_mode=response_mode)
             payload.setdefault("_meta", {})["next_commands"] = after_children(payload)

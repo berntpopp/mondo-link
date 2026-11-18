@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any
 
 import pytest
-from fastmcp.tools.tool import ToolResult
+from fastmcp.tools import ToolResult
 
 from mondo_link.constants import NON_HUMAN_ANIMAL_ROOT
 from mondo_link.data.repository import MondoRepository

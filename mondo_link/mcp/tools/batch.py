@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Any
 
+from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from mondo_link.constants import MAX_BATCH_ITEMS
@@ -72,7 +73,7 @@ def register_batch_tools(mcp: FastMCP) -> None:
             ),
         ],
         response_mode: ResponseMode = "compact",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             _require_batch(queries, "queries")
             svc = get_mondo_service()
@@ -130,7 +131,7 @@ def register_batch_tools(mcp: FastMCP) -> None:
         ],
         response_mode: ResponseMode = "compact",
         fields: FieldsArg = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             _require_batch(terms, "terms")
             svc = get_mondo_service()
