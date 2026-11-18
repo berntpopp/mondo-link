@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Any
 
+from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
@@ -37,7 +38,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
     )
     async def resolve_disease(
         query: QueryStr, response_mode: ResponseMode = "compact"
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().resolve_disease(query, response_mode=response_mode)
             payload.setdefault("_meta", {})["next_commands"] = after_resolve_disease(payload)
@@ -78,7 +79,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
             bool, Field(description="Include obsolete terms (default false).")
         ] = False,
         response_mode: ResponseMode = "compact",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().search_diseases(
                 query,
@@ -117,7 +118,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
         term: TermStr,
         response_mode: ResponseMode = "compact",
         fields: FieldsArg = None,
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_disease(
                 term, response_mode=response_mode, fields=fields

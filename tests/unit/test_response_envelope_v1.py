@@ -122,7 +122,7 @@ def _error_env(result: Any) -> dict[str, Any]:
     ``isError: true`` (a bare dict could never set the protocol flag). Assert the
     flag and hand back the structured envelope so the flat-frame checks still apply.
     """
-    from fastmcp.tools.tool import ToolResult
+    from fastmcp.tools import ToolResult
 
     assert isinstance(result, ToolResult)
     assert result.is_error is True

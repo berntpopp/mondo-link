@@ -50,6 +50,11 @@ _REFLECTION_MARKERS = (
     "Failed to validate request",
     "Failed to validate notification",
     "Message that failed validation",
+    # mcp.server.runner (SDK 2) echoes dropped frames / unknown notification methods.
+    "dropped %r",
+    "dropped %s",
+    "dropped a frame",
+    "no handler for notification",
 )
 _SCRUBBED_MESSAGE = "MCP request detail omitted (caller input redacted)."
 
@@ -63,6 +68,7 @@ _SOURCE_LOGGERS = (
     "fastmcp.server.mixins.mcp_operations",
     "mcp",
     "mcp.server.lowlevel.server",
+    "mcp.server.runner",
 )
 
 

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Annotated, Any, Literal
 
+from fastmcp.tools import ToolResult
 from pydantic import Field
 
 from mondo_link.buildinfo import build_info
@@ -41,7 +42,7 @@ def register_discovery_tools(mcp: FastMCP) -> None:
             Literal["summary", "full"],
             Field(description="summary (default, light) or full (adds policy notes)."),
         ] = "summary",
-    ) -> dict[str, Any]:
+    ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             signatures = await collect_tool_signatures(mcp)
             payload = project_capabilities(detail, signatures)
@@ -69,7 +70,7 @@ def register_discovery_tools(mcp: FastMCP) -> None:
             "Signature: get_diagnostics()."
         ),
     )
-    async def get_diagnostics() -> dict[str, Any]:
+    async def get_diagnostics() -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().get_diagnostics()
             payload["build"] = build_info()
