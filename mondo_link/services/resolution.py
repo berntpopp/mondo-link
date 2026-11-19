@@ -213,8 +213,13 @@ class Resolver:
             if fuzzy:
                 return self._fuzzy_or_not_found(raw)
             raise self._label_not_found(raw)
-        distinct = {c["mondo_id"] for c in candidates}
-        if len(distinct) == 1:
+        # Strongest match type wins: a primary label on one live term beats synonym-only
+        # hits on others; >=2 terms tied at the strongest type stay ambiguous_query.
+        candidates = sorted(candidates, key=_label_confidence, reverse=True)
+        best_conf = _label_confidence(candidates[0])
+        top_ids = {c["mondo_id"] for c in candidates if _label_confidence(c) == best_conf}
+        all_ids = {c["mondo_id"] for c in candidates}
+        if len(top_ids) == 1 and (len(all_ids) == 1 or self._is_live(candidates[0]["mondo_id"])):
             best = candidates[0]
             match_type = _LABEL_MATCH_TYPE.get(best["label_type"], "primary")
             matched_syn = best.get("matched_label") if match_type != "primary" else None
@@ -231,9 +236,14 @@ class Resolver:
                 confidence=confidence_for(match_type),
             )
         raise AmbiguousQueryError(
-            f"'{raw}' matches {len(distinct)} Mondo terms; pick one and call get_disease.",
+            f"'{raw}' matches {len(all_ids)} Mondo terms; pick one and call get_disease.",
             candidates=self._label_candidates(candidates),
         )
+
+    def _is_live(self, mondo_id: str) -> bool:
+        """True when ``mondo_id`` is a non-obsolete term (a precedence win needs one)."""
+        term = self._repo.get_term(mondo_id)
+        return term is not None and not term["is_obsolete"]
 
     def _xref_title_match(self, raw: str) -> ResolutionDetail | None:
         """Exact (case-insensitive) match on a mapped source's own title (SSSOM label).
@@ -287,7 +297,13 @@ class Resolver:
                     )
                 if kind == "ambiguous" and isinstance(payload, list):
                     cands = [
-                        {"mondo_id": h["mondo_id"], "name": h["name"], "label_type": "fuzzy"}
+                        {
+                            "mondo_id": h["mondo_id"],
+                            "name": h["name"],
+                            "label_type": "fuzzy",
+                            "match_type": "fuzzy",
+                            "score": h.get("score"),
+                        }
                         for h in payload
                     ]
                     raise AmbiguousQueryError(
@@ -314,7 +330,13 @@ class Resolver:
             )
         if kind == "ambiguous" and isinstance(payload, list):
             cands = [
-                {"mondo_id": h["mondo_id"], "name": h["name"], "label_type": "fuzzy"}
+                {
+                    "mondo_id": h["mondo_id"],
+                    "name": h["name"],
+                    "label_type": "fuzzy",
+                    "match_type": "fuzzy",
+                    "score": h.get("score"),
+                }
                 for h in payload
             ]
             raise AmbiguousQueryError(
@@ -402,9 +424,9 @@ class Resolver:
             out.append({"mondo_id": canon, "name": successor["name"] if successor else canon})
         return out
 
-    def _label_candidates(self, candidates: list[dict[str, Any]]) -> list[dict[str, str]]:
+    def _label_candidates(self, candidates: list[dict[str, Any]]) -> list[dict[str, Any]]:
         """Build de-duplicated ambiguity candidates with names."""
-        out: list[dict[str, str]] = []
+        out: list[dict[str, Any]] = []
         seen: set[str] = set()
         for cand in candidates:
             mid = cand["mondo_id"]
@@ -412,14 +434,22 @@ class Resolver:
                 continue
             seen.add(mid)
             term = self._repo.get_term(mid)
+            match_type = _LABEL_MATCH_TYPE.get(cand["label_type"], cand["label_type"])
             out.append(
                 {
                     "mondo_id": mid,
                     "name": term["name"] if term else mid,
                     "label_type": cand["label_type"],
+                    "match_type": match_type,
+                    "score": confidence_for(match_type),
                 }
             )
         return out
+
+
+def _label_confidence(cand: dict[str, Any]) -> float:
+    """Confidence of an exact label hit by its match type (higher = stronger)."""
+    return MATCH_CONFIDENCE.get(_LABEL_MATCH_TYPE.get(cand["label_type"], ""), 0.0)
 
 
 def _hits_to_suggestions(hits: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -30,8 +30,10 @@ def register_disease_tools(mcp: FastMCP) -> None:
             "Resolve a disease label, synonym, MONDO id, or external cross-reference "
             "CURIE (OMIM/Orphanet/DOID/...) to the canonical Mondo term "
             "{mondo_id, name, match_type}. A near-miss or acronym-like label falls "
-            "back to a conservative fuzzy match (match_type='fuzzy'); an ambiguous "
-            "label returns ambiguous_query with candidates; an obsolete id returns "
+            "back to a conservative fuzzy match (match_type='fuzzy'). The strongest "
+            "match type wins (primary label > exact synonym > related synonym); only "
+            "a tie returns ambiguous_query with candidates, each carrying match_type "
+            "and score; an obsolete id returns "
             "not_found with its successor. "
             "Signature: resolve_disease(query, response_mode=)."
         ),
