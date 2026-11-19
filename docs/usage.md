@@ -63,7 +63,8 @@ sparse projection (identity anchors are always returned).
 ```
 get_disease(term="MONDO:0008426")
 → {mondo_id, name, definition, synonyms[], xrefs: {OMIM:[...], ORPHA:[...], DOID:[...]},
-   parents[], children[], top_groupings[], subsets[], obsolete, replaced_by, mondo_version}
+   parents[], children[], top_groupings[], subsets[], obsolete, replaced_by,
+   causal_genes: [{hgnc_id, symbol, source}], mondo_version}
 ```
 
 A free-text label miss returns `not_found` with the closest hits in `candidates`

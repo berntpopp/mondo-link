@@ -50,6 +50,8 @@ _SEARCH_MAX_OBJECTS = 200
 #: serialization boundary, never left as a bare string. ``source`` is fixed
 #: fleet-wide for this backend; ``record_id`` is the term's MONDO id.
 _UNTRUSTED_SOURCE = "mondo"
+#: Provenance of ``causal_genes``: Mondo's germline-basis relation (not validity curation).
+_GENE_SOURCE = "Mondo has_material_basis_in_germline_mutation_in"
 
 
 def _finalize_xref_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -191,6 +193,8 @@ class MondoService:
                 enforce_untrusted_text_limits([UntrustedText.model_validate(definition)])
         if record["replaced_by"]:
             out["replaced_by"] = record["replaced_by"]
+        if genes := self._causal_genes(mondo_id):
+            out["causal_genes"] = genes
         return out
 
     # -- search ----------------------------------------------------------------
@@ -250,8 +254,11 @@ class MondoService:
             "children": self.repo.children(mondo_id),
             "top_groupings": self.repo.top_groupings(mondo_id),
             "xrefs": self._grouped_xrefs(mondo_id),
+            "causal_genes": self._causal_genes(mondo_id),
             "mondo_version": self._mondo_version(),
         }
+        if payload["causal_genes"] is None:  # schema-3 data: no causal_gene table
+            del payload["causal_genes"]
         # Reject an unknown fields root against the FULL record (before shaping), so
         # fields=["__bogus__"] is invalid_input naming the projectable keys -- not a
         # silent anchors-only success (Response-Envelope v1.1).
@@ -262,6 +269,11 @@ class MondoService:
         # away, and a non-emitted definition must never fail the response.
         enforce_untrusted_text_limits(_fenced_in(final))
         return final
+
+    def _causal_genes(self, mondo_id: str) -> list[dict[str, Any]] | None:
+        """Mondo's germline-basis genes with provenance; ``None`` when the data lacks them."""
+        genes = self.repo.causal_genes(mondo_id)
+        return None if genes is None else [{**g, "source": _GENE_SOURCE} for g in genes]
 
     def _grouped_xrefs(self, mondo_id: str, prefixes: list[str] | None = None) -> dict[str, Any]:
         """Group cross-references by prefix, ONE entry per target id.

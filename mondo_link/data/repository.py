@@ -1,9 +1,5 @@
 """Read-only SQLite repository for the built Mondo index (CONTRACT BARRIER).
 
-Wave 0 freezes the constructor (read-only connection, ``DataUnavailableError`` on
-a missing file) and the method-signature surface downstream depends on. Wave 1B
-fills the query bodies against the frozen ``schema.sql``.
-
 All indexes are pre-computed by the builder, so this layer only reads rows and
 decodes the JSON list columns. FTS5 queries are sanitized so raw user text never
 reaches ``MATCH`` (which can raise on operator characters like ``( : -``).
@@ -59,8 +55,6 @@ class MondoRepository:
         """Close the underlying SQLite connection."""
         self._conn.close()
 
-    # -- helpers ---------------------------------------------------------------
-
     @staticmethod
     def _fts_query(text: str) -> str:
         """Build a safe FTS5 ``MATCH`` string (token AND, last token prefixed).
@@ -93,8 +87,6 @@ class MondoRepository:
             "subsets": _json_or(row["subsets"], []),
         }
         return record
-
-    # -- provenance ------------------------------------------------------------
 
     def read_meta(self) -> dict[str, Any]:
         """Return build provenance from the ``meta`` table."""
@@ -367,6 +359,16 @@ class MondoRepository:
             (NON_HUMAN_ANIMAL_ROOT, *ids),
         ).fetchall()
         return {r["mondo_id"] for r in rows}
+
+    def causal_genes(self, mondo_id: str) -> list[dict[str, Any]] | None:
+        """Mondo germline-basis HGNC genes, or ``None`` on schema-3 data (no table)."""
+        sql = "SELECT hgnc_id, symbol FROM causal_gene WHERE mondo_id = ? ORDER BY symbol"
+        try:
+            return [dict(r) for r in self._conn.execute(sql, (mondo_id,))]
+        except sqlite3.OperationalError as exc:
+            if "no such table" in str(exc):
+                return None
+            raise DataUnavailableError("The Mondo database could not be read.") from exc
 
     # -- cross-references ------------------------------------------------------
 

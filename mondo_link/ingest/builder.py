@@ -198,6 +198,15 @@ def _load_obo_xrefs(conn: sqlite3.Connection, terms: dict[str, dict[str, Any]]) 
     return count
 
 
+def _load_causal_genes(conn: sqlite3.Connection, terms: dict[str, dict[str, Any]]) -> None:
+    """Insert Mondo's germline-basis HGNC genes (``causal_gene``)."""
+    _executemany(
+        conn,
+        "INSERT INTO causal_gene (mondo_id, hgnc_id, symbol) VALUES (?, ?, ?)",
+        [(mondo_id, *gene) for mondo_id, t in terms.items() for gene in t["causal_genes"]],
+    )
+
+
 def _load_sssom(conn: sqlite3.Connection, path: Path | None) -> int:
     """Insert xref rows from the SSSOM table (origin ``sssom``). Returns mapping count."""
     if path is None or not path.exists():
@@ -284,6 +293,7 @@ def build_database(
                 closure_count = _load_graph(conn, terms)
                 xref_count = _load_obo_xrefs(conn, terms)
                 mapping_count = _load_sssom(conn, sssom_path)
+                _load_causal_genes(conn, terms)
                 xref_count += mapping_count
                 conn.execute("INSERT INTO term_fts(term_fts) VALUES ('optimize')")
 

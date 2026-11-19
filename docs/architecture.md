@@ -45,6 +45,7 @@ services/ mondo_service, shaping, pagination, refresh
 | `mondo_closure` | transitive `is_a` (`mondo_id`, `ancestor_id`), incl. self-pair. |
 | `mondo_top_grouping` | direct children of `MONDO:0000001` (orientation/roll-up). |
 | `xref` | **merged** OBO `xref:` + SSSOM rows, tagged `origin` (`obo_xref`\|`sssom`), `predicate`, `source`. |
+| `causal_gene` | Mondo `has_material_basis_in_germline_mutation_in` HGNC genes (schema 4; absent on schema-3 data, where `causal_genes` is omitted). |
 | `meta` | single-row provenance: schema/Mondo version, validators, counts, build time. |
 
 ### Cross-reference model

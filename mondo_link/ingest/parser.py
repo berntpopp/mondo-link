@@ -48,6 +48,12 @@ _SYNONYM_RE = re.compile(r'^"(?P<text>(?:[^"\\]|\\.)*)"\s+(?P<rest>.*)$')
 _TRAILING_SOURCES_RE = re.compile(r"\[(?P<body>.*?)\]\s*$")
 _TRAILING_CURLY_RE = re.compile(r"\s*\{.*\}\s*$")
 _DEF_RE = re.compile(r'^"(?P<text>(?:[^"\\]|\\.)*)"')
+#: ``relationship:``/``intersection_of: has_material_basis_in_germline_mutation_in <hgnc IRI> ! SYM``.
+#: Only HGNC (human) genes; Mondo's NCBIGene targets are non-human (OMIA) animal genes.
+_GERMLINE_GENE_RE = re.compile(
+    r"^has_material_basis_in_germline_mutation_in\s+http://identifiers\.org/hgnc/(?P<n>\d+)\b"
+    r"[^!]*(?:!\s*(?P<symbol>\S+))?"
+)
 
 
 def parse_obo_header(text: str) -> dict[str, str]:
@@ -136,6 +142,7 @@ def _new_term() -> dict[str, Any]:
         "obsolete": False,
         "replaced_by": None,
         "consider": [],
+        "causal_genes": [],
     }
 
 
@@ -161,6 +168,11 @@ def _apply_tag(term: dict[str, Any], tag: str, value: str) -> None:
         parent = normalize_mondo_id(_TRAILING_CURLY_RE.sub("", value.split("!")[0]).strip())
         if parent:
             term["parents"].append(parent)
+    elif tag in ("relationship", "intersection_of"):  # ~270 genes sit only in the latter
+        gene = _GERMLINE_GENE_RE.match(value)
+        pair = gene and (f"HGNC:{gene.group('n')}", gene.group("symbol"))
+        if pair and pair not in term["causal_genes"]:
+            term["causal_genes"].append(pair)
     elif tag == "is_obsolete" and value.lower() == "true":
         term["obsolete"] = True
     elif tag == "replaced_by":
