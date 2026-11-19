@@ -110,6 +110,22 @@ def test_relaxed_suggestions_avoid_dead_end(service: Any) -> None:
     with pytest.raises(NotFoundError) as exc:
         service.resolve_disease("Marfan zzzqq")
     assert exc.value.suggestions, "relaxation should surface Marfan-family candidates"
+    assert exc.value.relaxed_word == "Marfan"  # flagged weak: matched one word only
+
+
+def test_strict_hits_are_not_flagged_relaxed(service: Any) -> None:
+    with pytest.raises(NotFoundError) as exc:
+        service.get_disease("Shprintzen Goldberg")
+    assert exc.value.relaxed_word is None
+
+
+def test_mapped_source_title_resolves_as_xref(service: Any) -> None:
+    # An OMIM title present only as the SSSOM exactMatch object_label (not a Mondo
+    # label/synonym) resolves, case-insensitively, with the source id as provenance.
+    out = service.resolve_disease("shprintzen-goldberg syndrome; sgs")
+    assert out["mondo_id"] == _SGS
+    assert out["match_type"] == "xref"
+    assert out["matched_synonym_metadata"]["xref_id"] == "OMIM:182212"
 
 
 def test_get_disease_stays_strict_on_near_miss(service: Any) -> None:
