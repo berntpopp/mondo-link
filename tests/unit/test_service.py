@@ -8,7 +8,6 @@ import pytest
 
 from mondo_link.data.repository import MondoRepository
 from mondo_link.exceptions import (
-    AmbiguousQueryError,
     InvalidInputError,
     NotFoundError,
     WithdrawnEntryError,
@@ -78,12 +77,12 @@ def test_resolve_by_xref(service: MondoService) -> None:
     assert res["match_type"] == "xref"
 
 
-def test_resolve_ambiguous_raises(service: MondoService) -> None:
-    with pytest.raises(AmbiguousQueryError) as exc:
-        service.resolve_disease("shared label")
-    cands = exc.value.candidates
-    assert {c["mondo_id"] for c in cands} == {HD, NEURODEGEN}
-    assert all("name" in c for c in cands)
+def test_resolve_exact_synonym_beats_related_synonym(service: MondoService) -> None:
+    # "shared label" is an EXACT synonym of HD but only a RELATED synonym of NEURODEGEN:
+    # the strongest match type wins (issue #124); genuine ties stay ambiguous_query.
+    res = service.resolve_disease("shared label")
+    assert res["mondo_id"] == HD
+    assert res["match_type"] == "exact_synonym"
 
 
 def test_resolve_obsolete_raises_withdrawn(service: MondoService) -> None:

@@ -113,7 +113,7 @@ class WithdrawnEntryError(NotFoundError):
 class AmbiguousQueryError(MondoError):
     """A query matched several records and cannot be resolved unambiguously."""
 
-    def __init__(self, message: str, *, candidates: list[dict[str, str]] | None = None) -> None:
+    def __init__(self, message: str, *, candidates: list[dict[str, Any]] | None = None) -> None:
         """Store the ambiguous candidates so the envelope can surface them."""
         super().__init__(message)
         self.candidates = candidates or []

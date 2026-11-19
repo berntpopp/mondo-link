@@ -6,6 +6,20 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-19
+
+### Changed
+
+- `resolve_disease`: when an exact label hits several terms, the strongest match type
+  wins (primary label > exact synonym > related synonym) on a single live term, instead
+  of `ambiguous_query` ("Sialidosis" now resolves to MONDO:0017734). Terms tied at the
+  strongest type still return `ambiguous_query` -- never a silent pick (#124).
+
+### Added
+
+- `ambiguous_query` candidates carry `match_type` (closed enum) and `score` (confidence
+  for exact-label hits, FTS relevance for `fuzzy`), ordered strongest first (#124).
+
 ## [0.8.0] - 2026-11-19
 
 ### Added

@@ -44,8 +44,12 @@ def trusted_db_name(mondo_id: str) -> str | None:
     return name if isinstance(name, str) and name else None
 
 
+#: Closed set of candidate ``match_type`` values (mirrors resolution.MATCH_CONFIDENCE).
+_MATCH_TYPES = frozenset({"primary", "exact_synonym", "related_synonym", "xref", "fuzzy"})
+
+
 def valid_id_entries(entries: Any) -> list[dict[str, Any]]:
-    """Project candidate/suggestion/replacement entries to ``{mondo_id, name[, score]}``.
+    """Project candidate/suggestion/replacement entries to ``{mondo_id, name[, match_type, score]}``.
 
     The ``mondo_id`` must match the canonical grammar (a non-conforming entry is dropped
     entirely). The ``name`` is RE-DERIVED from the DB for that validated id via
@@ -69,6 +73,8 @@ def valid_id_entries(entries: Any) -> list[dict[str, Any]]:
         name = trusted_db_name(mondo_id)
         if name:
             item["name"] = sanitize_message(name)
+        if entry.get("match_type") in _MATCH_TYPES:  # closed enum, never free text
+            item["match_type"] = entry["match_type"]
         score = entry.get("score")
         if isinstance(score, int | float) and not isinstance(score, bool):
             item["score"] = score

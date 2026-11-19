@@ -154,6 +154,8 @@ async def test_resolve_ambiguous_envelope(facade: Any, structured: Any) -> None:
     assert payload["success"] is False
     assert payload["error_code"] == "ambiguous_query"
     assert len({c["mondo_id"] for c in payload["candidates"]}) >= 2
+    assert all(c["match_type"] == "exact_synonym" for c in payload["candidates"])
+    assert all(c["score"] == 0.95 for c in payload["candidates"])
     assert payload["_meta"]["next_commands"][0]["tool"] == "get_disease"
 
 

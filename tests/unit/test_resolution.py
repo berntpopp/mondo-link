@@ -144,6 +144,15 @@ def test_exact_ambiguous_label_beats_fuzzy(service: Any) -> None:
     candidates = exc.value.candidates
     assert len({c["mondo_id"] for c in candidates}) >= 2
     assert all(c.get("name") for c in candidates)
+    assert all(c["match_type"] == "exact_synonym" and c["score"] == 0.95 for c in candidates)
+
+
+def test_primary_label_beats_synonym_on_another_term(service: Any) -> None:
+    # Issue #124 ("Sialidosis"): the query is one term's PRIMARY label and only a
+    # broad synonym of another -> the primary label wins instead of ambiguous_query.
+    out = service.resolve_disease("MULTIPLE congenital anomalies syndrome")
+    assert out["mondo_id"] == "MONDO:0015159"
+    assert out["match_type"] == "primary"
 
 
 # -- fuzzy fallback branches (Resolver over a scripted fake repo) --------------
@@ -229,3 +238,29 @@ def test_strict_resolve_term_id_never_fuzzy() -> None:
     resolver = Resolver(_FakeRepo([_hit("MONDO:1", "a", FUZZY_MIN_SCORE + 5.0)]))
     with pytest.raises(NotFoundError):
         resolver.resolve_term_id("some label")
+
+
+class _LabelRepo:
+    """Repo stub: scripted exact-label rows and term records (obsolete flag)."""
+
+    def __init__(self, rows: list[dict[str, Any]], obsolete: set[str]) -> None:
+        self._rows, self._obsolete = rows, obsolete
+
+    def resolve_label(self, label: str) -> list[dict[str, Any]]:
+        return self._rows
+
+    def get_term(self, mondo_id: str) -> dict[str, Any]:
+        return {"mondo_id": mondo_id, "name": mondo_id, "is_obsolete": mondo_id in self._obsolete}
+
+
+def test_primary_label_on_obsolete_term_does_not_win() -> None:
+    # A precedence win needs a LIVE term: an obsolete primary label over a live
+    # synonym hit stays ambiguous rather than silently resolving the obsolete term.
+    rows = [
+        {"mondo_id": "MONDO:0000010", "label_type": "broad_synonym", "matched_label": "x"},
+        {"mondo_id": "MONDO:0000011", "label_type": "primary", "matched_label": "x"},
+    ]
+    resolver = Resolver(_LabelRepo(rows, obsolete={"MONDO:0000011"}))
+    with pytest.raises(AmbiguousQueryError) as exc:
+        resolver.classify_resolution("x")
+    assert [c["match_type"] for c in exc.value.candidates] == ["primary", "related_synonym"]

@@ -25,6 +25,7 @@ is_a: MONDO:0000001 ! disease or disorder
 [Term]
 id: MONDO:0000004
 name: connective tissue disorder
+synonym: "multiple congenital anomalies syndrome" BROAD []
 is_a: MONDO:0000001 ! disease or disorder
 
 [Term]
