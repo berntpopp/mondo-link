@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.2] - 2026-11-19
+
+- `causal_genes` is `[]` (not omitted) for a disease with no germline causal gene, in every response mode; it is absent only on data without the gene table (#127).
+
 ## [0.10.1] - 2026-11-19
 
 - Re-pin the data to `data-mondo-1ed8ac77ae72f843` (Mondo releases/2026-11-03, schema 4) so `causal_genes` ships (#127).

@@ -193,7 +193,7 @@ class MondoService:
                 enforce_untrusted_text_limits([UntrustedText.model_validate(definition)])
         if record["replaced_by"]:
             out["replaced_by"] = record["replaced_by"]
-        if genes := self._causal_genes(mondo_id):
+        if (genes := self._causal_genes(mondo_id)) is not None:
             out["causal_genes"] = genes
         return out
 

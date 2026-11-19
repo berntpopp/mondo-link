@@ -22,7 +22,8 @@ _GENES_NOTE = (
     "causal_genes [{hgnc_id, symbol}] are Mondo's has_material_basis_in_germline_"
     "mutation_in assertions for mostly monogenic diseases, not a gene-disease validity "
     "curation (use GenCC/ClinGen for that); next_commands chain to hgnc_resolve_symbol "
-    "for the gene's band and details."
+    "for the gene's band and details. causal_genes: [] means Mondo asserts none; the "
+    "field is absent only when the loaded data predates the gene table."
 )
 
 
