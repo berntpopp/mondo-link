@@ -40,9 +40,9 @@ _MUTABLE_TAGS = frozenset({"latest", "main", "master", "head", "stable", "curren
 # The one reviewed data release the init sidecar restores (a published
 # `data-mondo-*` release of this repository). Change it only in a reviewed PR,
 # together with container-release.json (tests/unit/test_data_release_identity.py).
-DATA_RELEASE_TAG = "data-mondo-16469cc957537704"
-DATA_COMPRESSED_SHA256 = "407194bc603260bc760b78a7d8c391192b77f5511b8e3bec4fcba09d604cd597"
-DATA_EXPANDED_SHA256 = "16469cc95753770428fb3f97fbf42099719ce671f9a739e2522c85256ef4b96c"
+DATA_RELEASE_TAG = "data-mondo-1ed8ac77ae72f843"
+DATA_COMPRESSED_SHA256 = "a991f79737869b6162ecf6e4905becbf9f2afd1a2127bf98836c1a84f7880cce"
+DATA_EXPANDED_SHA256 = "1ed8ac77ae72f843c2b221767f637a7def69eb34520ecd55cd2ed5d0e808a267"
 
 
 class ImmutableDataRequirement(BaseModel):

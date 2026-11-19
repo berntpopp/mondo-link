@@ -30,8 +30,8 @@
   },
   "data": {
     "mode": "external-reference",
-    "release_tag": "data-mondo-16469cc957537704",
-    "digest": "sha256:407194bc603260bc760b78a7d8c391192b77f5511b8e3bec4fcba09d604cd597",
+    "release_tag": "data-mondo-1ed8ac77ae72f843",
+    "digest": "sha256:a991f79737869b6162ecf6e4905becbf9f2afd1a2127bf98836c1a84f7880cce",
     "schema_compatibility": [
       "3",
       "4"
