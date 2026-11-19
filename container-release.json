@@ -33,7 +33,8 @@
     "release_tag": "data-mondo-16469cc957537704",
     "digest": "sha256:407194bc603260bc760b78a7d8c391192b77f5511b8e3bec4fcba09d604cd597",
     "schema_compatibility": [
-      "3"
+      "3",
+      "4"
     ],
     "image_allowlist": [
       "home/app/web/mondo_link/data/__init__.py",

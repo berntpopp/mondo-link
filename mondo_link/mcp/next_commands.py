@@ -80,6 +80,17 @@ def after_capabilities() -> list[dict[str, Any]]:
     return [cmd("resolve_disease", query="Marfan syndrome"), cmd("get_diagnostics")]
 
 
+#: Router-namespaced tools on sibling fleet servers (genefoundry router), with the
+#: arguments a step may pass. Not in this server's TOOLS; the router leaves them as-is.
+FLEET_TOOLS: dict[str, frozenset[str]] = {"hgnc_resolve_symbol": frozenset({"query"})}
+
+
+def _gene_steps(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """HGNC lookup (band, locus, details) for each Mondo germline-basis gene."""
+    genes = payload.get("causal_genes") or []
+    return [cmd("hgnc_resolve_symbol", query=g["symbol"]) for g in genes[:3] if g.get("symbol")]
+
+
 def after_resolve_disease(resolution: dict[str, Any]) -> list[dict[str, Any]]:
     """After resolve_disease: open the canonical record, else fall back to search."""
     mondo_id = resolution.get("mondo_id")
@@ -88,7 +99,7 @@ def after_resolve_disease(resolution: dict[str, Any]) -> list[dict[str, Any]]:
             cmd("search_diseases", query=str(resolution.get("query", ""))),
             cmd("get_server_capabilities"),
         ]
-    return [cmd("get_disease", term=mondo_id)]
+    return [cmd("get_disease", term=mondo_id), *_gene_steps(resolution)]
 
 
 def after_search(query: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
@@ -112,6 +123,7 @@ def after_get_disease(disease: dict[str, Any]) -> list[dict[str, Any]]:
     return [
         cmd("get_disease_ancestors", term=mondo_id),
         cmd("map_cross_ontology", term=mondo_id),
+        *_gene_steps(disease),
     ]
 
 

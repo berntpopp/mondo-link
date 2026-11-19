@@ -17,6 +17,15 @@ if TYPE_CHECKING:
     from fastmcp import FastMCP
 
 
+#: Honest scope of ``causal_genes`` (issue #127), shared by both tool descriptions.
+_GENES_NOTE = (
+    "causal_genes [{hgnc_id, symbol}] are Mondo's has_material_basis_in_germline_"
+    "mutation_in assertions for mostly monogenic diseases, not a gene-disease validity "
+    "curation (use GenCC/ClinGen for that); next_commands chain to hgnc_resolve_symbol "
+    "for the gene's band and details."
+)
+
+
 def register_disease_tools(mcp: FastMCP) -> None:
     """Register the disease lookup/search tools on a FastMCP instance."""
 
@@ -29,7 +38,8 @@ def register_disease_tools(mcp: FastMCP) -> None:
         description=(
             "Resolve a disease label, synonym, MONDO id, or external cross-reference "
             "CURIE (OMIM/Orphanet/DOID/...) to the canonical Mondo term "
-            "{mondo_id, name, match_type}. A near-miss or acronym-like label falls "
+            "{mondo_id, name, match_type} and germline causal genes (Mondo assertion). "
+            f"{_GENES_NOTE} A near-miss or acronym-like label falls "
             "back to a conservative fuzzy match (match_type='fuzzy'). The strongest "
             "match type wins (primary label > exact synonym > related synonym); only "
             "a tie returns ambiguous_query with candidates, each carrying match_type "
@@ -110,7 +120,8 @@ def register_disease_tools(mcp: FastMCP) -> None:
         description=(
             "Return a Mondo disease term: definition, synonyms, grouped "
             "cross-references, direct parents and children, top-level groupings, "
-            "subsets, and obsolescence (replaced_by/consider). The term accepts a "
+            "subsets, obsolescence (replaced_by/consider), and germline causal genes "
+            f"(Mondo assertion). {_GENES_NOTE} The term accepts a "
             "MONDO id, a label/synonym, or an external xref CURIE (resolved first). "
             "Pass fields=['xrefs.OMIM', ...] for a sparse projection. "
             "Signature: get_disease(term, response_mode=, fields=)."

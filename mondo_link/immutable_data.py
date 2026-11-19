@@ -23,7 +23,7 @@ from urllib.parse import urljoin, urlsplit
 import httpx
 
 from mondo_link.config import ImmutableDataRequirement
-from mondo_link.constants import SCHEMA_VERSION
+from mondo_link.constants import COMPATIBLE_SCHEMA_VERSIONS
 from mondo_link.exceptions import DataUnavailableError
 
 DATABASE_NAME = "mondo.sqlite"
@@ -123,7 +123,7 @@ def _verify_database(requirement: ImmutableDataRequirement, database: Path) -> N
             connection.close()
     except sqlite3.Error as exc:
         raise DataUnavailableError("Mondo database metadata verification failed") from exc
-    if row != (SCHEMA_VERSION,):
+    if row is None or row[0] not in COMPATIBLE_SCHEMA_VERSIONS:
         raise DataUnavailableError("Mondo database schema does not match this application")
 
 

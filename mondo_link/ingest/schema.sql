@@ -69,6 +69,14 @@ CREATE TABLE xref (
 CREATE INDEX idx_xref_mondo ON xref (mondo_id);
 CREATE INDEX idx_xref_obj ON xref (prefix, object_id_upper);
 
+-- Schema 4: Mondo has_material_basis_in_germline_mutation_in -> HGNC gene.
+CREATE TABLE causal_gene (
+    mondo_id TEXT NOT NULL,
+    hgnc_id  TEXT NOT NULL,
+    symbol   TEXT
+);
+CREATE INDEX idx_causal_gene ON causal_gene (mondo_id);
+
 CREATE TABLE meta (
     id                INTEGER PRIMARY KEY CHECK (id = 1),
     schema_version    INTEGER,

@@ -5,8 +5,11 @@ from __future__ import annotations
 from typing import Literal, get_args
 
 #: Bumped whenever the on-disk SQLite schema changes. v3 adds synonym_trigram
-#: (an FTS5 trigram virtual table for fuzzy synonym matching across MONDO labels).
-SCHEMA_VERSION = 3
+#: (an FTS5 trigram virtual table for fuzzy synonym matching across MONDO labels);
+#: v4 adds causal_gene (Mondo germline-basis HGNC genes).
+SCHEMA_VERSION = 4
+#: Schemas this app can serve: v3 lacks causal_gene, so causal_genes is omitted.
+COMPATIBLE_SCHEMA_VERSIONS = (3, 4)
 
 #: The Mondo ontology root term ("disease or disorder").
 MONDO_ROOT = "MONDO:0000001"

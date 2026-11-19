@@ -11,7 +11,7 @@ from typing import Any
 from mondo_link.mcp import next_commands as nc
 from mondo_link.mcp.capabilities import TOOLS
 
-_VALID = set(TOOLS)
+_VALID = set(TOOLS) | set(nc.FLEET_TOOLS)
 
 
 def _assert_steps(steps: list[dict[str, Any]]) -> None:

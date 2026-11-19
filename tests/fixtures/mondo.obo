@@ -52,6 +52,9 @@ xref: Orphanet:2462 {source="MONDO:equivalentTo"}
 xref: DOID:0050776
 is_a: MONDO:0015159 {source="Orphanet:2462"} ! multiple congenital anomalies syndrome
 is_a: MONDO:0017310 {source="Orphanet:2462"} ! Marfan and Marfan-related disorder
+intersection_of: has_material_basis_in_germline_mutation_in http://identifiers.org/hgnc/10896 ! SKI
+relationship: has_material_basis_in_germline_mutation_in http://identifiers.org/hgnc/10896 {source="OMIM:182212"} ! SKI
+relationship: has_material_basis_in_germline_mutation_in http://identifiers.org/ncbigene/403811 {source="OMIA:001516-9615"} ! KIT
 
 [Term]
 id: MONDO:0099999

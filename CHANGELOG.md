@@ -6,6 +6,15 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-11-19
+
+- `get_disease` and `resolve_disease` return `causal_genes: [{hgnc_id, symbol, source}]`:
+  Mondo's `has_material_basis_in_germline_mutation_in` HGNC genes (from `relationship:` and
+  `intersection_of:` lines; mostly monogenic diseases; not a validity curation, see
+  GenCC/ClinGen). `_meta.next_commands` chain to `hgnc_resolve_symbol` for the gene's band (#127).
+- Data schema 4 adds the `causal_gene` table. The app still serves schema-3 data and
+  omits `causal_genes` there; a schema-4 data release + re-pin turns the field on.
+
 ## [0.9.1] - 2026-11-19
 
 - Tool descriptions lead with what each tool returns (D1, Tool-Schema Documentation v1.1).
