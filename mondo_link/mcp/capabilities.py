@@ -197,7 +197,10 @@ def build_capabilities() -> dict[str, Any]:
             "scope/type/sources, and the full definition on search hits); compact "
             "(default) drops null/empty values, collapses synonyms to plain strings, "
             "and returns search hits as mondo_id + name + score + a short "
-            "definition_snippet; minimal keeps only mondo_id + name."
+            "definition_snippet; minimal keeps only mondo_id + name. On the hierarchy, "
+            "resolve_disease and map_cross_ontology tools standard/full add the anchor "
+            "term's fenced definition; on resolve_xref they add each match's prefix + "
+            "object_id."
         ),
         "match_type_semantics": (
             "resolve_disease.match_type is one of mondo_id | primary | exact_synonym "

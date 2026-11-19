@@ -107,6 +107,22 @@ def _fence_search_hit(hit: dict[str, Any], mode: str, sink: list[UntrustedText])
     return shaped
 
 
+def _add_definition(
+    out: dict[str, Any], record: Any, mondo_id: str, response_mode: str
+) -> dict[str, Any]:
+    """standard/full widen a payload with the anchor term's fenced definition.
+
+    This is what makes ``response_mode`` meaningful on the single-term tools (and lets
+    a standard resolve skip a get_disease round trip); compact/minimal stay lean.
+    """
+    if response_mode in ("standard", "full") and record is not None:
+        definition = _fence_definition(record["definition"], mondo_id=mondo_id)
+        if definition is not None:
+            out["definition"] = definition
+            enforce_untrusted_text_limits([UntrustedText.model_validate(definition)])
+    return out
+
+
 class MondoService:
     def __init__(self, repository: MondoRepository | None) -> None:
         self._repo = repository
@@ -183,14 +199,7 @@ class MondoService:
             out["matched_synonym"] = res.matched_synonym
         if getattr(res, "matched_metadata", None):
             out["matched_synonym_metadata"] = res.matched_metadata
-        # standard/full carry the fenced definition too, so response_mode meaningfully
-        # widens the top-level payload (and a standard resolve can skip a get_disease
-        # round trip when the label alone is enough). compact/minimal stay lean.
-        if response_mode in ("standard", "full"):
-            definition = _fence_definition(record["definition"], mondo_id=mondo_id)
-            if definition is not None:
-                out["definition"] = definition
-                enforce_untrusted_text_limits([UntrustedText.model_validate(definition)])
+        _add_definition(out, record, mondo_id, response_mode)
         if record["replaced_by"]:
             out["replaced_by"] = record["replaced_by"]
         if (genes := self._causal_genes(mondo_id)) is not None:
@@ -321,7 +330,9 @@ class MondoService:
         response_mode: str = DEFAULT_RESPONSE_MODE,
     ) -> dict[str, Any]:
         """Return transitive ancestors of a term (closure walk)."""
-        return self._closure(term, kind="ancestors", limit=limit, offset=offset)
+        return self._closure(
+            term, kind="ancestors", limit=limit, offset=offset, response_mode=response_mode
+        )
 
     def get_descendants(
         self,
@@ -332,9 +343,13 @@ class MondoService:
         response_mode: str = DEFAULT_RESPONSE_MODE,
     ) -> dict[str, Any]:
         """Return transitive descendants of a term (closure walk)."""
-        return self._closure(term, kind="descendants", limit=limit, offset=offset)
+        return self._closure(
+            term, kind="descendants", limit=limit, offset=offset, response_mode=response_mode
+        )
 
-    def _closure(self, term: str, *, kind: str, limit: int, offset: int = 0) -> dict[str, Any]:
+    def _closure(
+        self, term: str, *, kind: str, limit: int, offset: int = 0, response_mode: str
+    ) -> dict[str, Any]:
         mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         limit = max(1, min(limit, _MAX_LIMIT))
@@ -345,37 +360,39 @@ class MondoService:
         else:
             rows = self.repo.descendants(mondo_id, limit=limit, offset=offset)
             total = self.repo.count_descendants(mondo_id)
-        return {
+        out = {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,
             kind: rows,
             **page_fields(total=total, returned=len(rows), limit=limit, offset=offset),
             "mondo_version": self._mondo_version(),
         }
+        return _add_definition(out, record, mondo_id, response_mode)
 
     def get_parents(
         self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE
     ) -> dict[str, Any]:
         """Return the immediate parents of a term."""
-        return self._neighbours(term, kind="parents")
+        return self._neighbours(term, kind="parents", response_mode=response_mode)
 
     def get_children(
         self, term: str, *, response_mode: str = DEFAULT_RESPONSE_MODE
     ) -> dict[str, Any]:
         """Return the immediate children of a term."""
-        return self._neighbours(term, kind="children")
+        return self._neighbours(term, kind="children", response_mode=response_mode)
 
-    def _neighbours(self, term: str, *, kind: str) -> dict[str, Any]:
+    def _neighbours(self, term: str, *, kind: str, response_mode: str) -> dict[str, Any]:
         mondo_id = self._resolution.resolve_term_id(term)
         record = self.repo.get_term(mondo_id)
         rows = self.repo.parents(mondo_id) if kind == "parents" else self.repo.children(mondo_id)
-        return {
+        out = {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,
             kind: rows,
             "count": len(rows),
             "mondo_version": self._mondo_version(),
         }
+        return _add_definition(out, record, mondo_id, response_mode)
 
     # -- cross-ontology --------------------------------------------------------
 
@@ -404,15 +421,11 @@ class MondoService:
         key = normalized.upper()
         total = self.repo.count_mondo_for_xref(key)
         matches = self.repo.mondo_for_xref(key, limit=limit, offset=offset)
-        results = [
-            {
-                "mondo_id": m["mondo_id"],
-                "name": m["name"],
-                "predicate": m["predicate"],
-                "origin": m["origin"],
-            }
-            for m in matches
-        ]
+        # full/standard also echo the matched xref row's own prefix/object_id.
+        keys: tuple[str, ...] = ("mondo_id", "name", "predicate", "origin")
+        if response_mode in ("standard", "full"):
+            keys += ("prefix", "object_id")
+        results = [{k: m[k] for k in keys} for m in matches]
         return {
             "xref_id": raw,
             "normalized": normalized,
@@ -449,7 +462,7 @@ class MondoService:
                 )
             normalized = [p.strip().upper() for p in prefixes]
         mappings = self._grouped_xrefs(mondo_id, normalized)
-        return {
+        out = {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,
             "mappings": mappings,
@@ -457,3 +470,4 @@ class MondoService:
             "prefixes_filter": normalized,
             "mondo_version": self._mondo_version(),
         }
+        return _add_definition(out, record, mondo_id, response_mode)

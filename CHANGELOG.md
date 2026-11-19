@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-11-19
+
+- `response_mode` is now honoured by `get_disease_ancestors`/`_descendants`/`_parents`/`_children` and `map_cross_ontology` (standard/full add the anchor term's fenced `definition`) and by `resolve_xref` (standard/full add each match's `prefix` + `object_id`). It was advertised but ignored; compact output is unchanged (behaviour probe, router #314).
+
 ## [0.10.2] - 2026-11-19
 
 - `causal_genes` is `[]` (not omitted) for a disease with no germline causal gene, in every response mode; it is absent only on data without the gene table (#127).
