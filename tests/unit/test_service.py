@@ -398,3 +398,31 @@ def test_mondo_version_constants_present(service: MondoService) -> None:
     # Every record payload is grounded with mondo_version.
     assert service.get_parents("MONDO:0000001")["mondo_version"] == "2026-06-01"
     assert service.map_cross_ontology(ROOT)["mondo_version"] == "2026-06-01"
+
+
+# -- response_mode is honoured (behaviour probe: compact != full) --------------
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda s, m: s.get_ancestors(HD, response_mode=m),
+        lambda s, m: s.get_descendants(NEURODEGEN, response_mode=m),
+        lambda s, m: s.get_parents(HD, response_mode=m),
+        lambda s, m: s.get_children(NEURODEGEN, response_mode=m),
+        lambda s, m: s.map_cross_ontology(HD, response_mode=m),
+    ],
+)
+def test_anchor_tools_full_adds_fenced_definition(service: MondoService, call) -> None:
+    compact, full = call(service, "compact"), call(service, "full")
+    assert "definition" not in compact
+    assert full["definition"]["text"]
+    assert {k: v for k, v in full.items() if k != "definition"} == compact
+
+
+def test_resolve_xref_full_adds_matched_object_id(service: MondoService) -> None:
+    compact = service.resolve_xref("omim:143100", response_mode="compact")
+    full = service.resolve_xref("omim:143100", response_mode="full")
+    assert all("object_id" not in m for m in compact["matches"])
+    assert [m["object_id"] for m in full["matches"]] == ["OMIM:143100"] * len(full["matches"])
+    assert [m["prefix"] for m in full["matches"]] == ["OMIM"] * len(full["matches"])
