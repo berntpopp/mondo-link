@@ -207,6 +207,9 @@ class Resolver:
                 raise NotFoundError(f"No Mondo term cross-references {normalized}.")
         candidates = self._repo.resolve_label(raw.upper())
         if not candidates:
+            titled = self._xref_title_match(raw)
+            if titled is not None:
+                return titled
             if fuzzy:
                 return self._fuzzy_or_not_found(raw)
             raise self._label_not_found(raw)
@@ -231,6 +234,32 @@ class Resolver:
             f"'{raw}' matches {len(distinct)} Mondo terms; pick one and call get_disease.",
             candidates=self._label_candidates(candidates),
         )
+
+    def _xref_title_match(self, raw: str) -> ResolutionDetail | None:
+        """Exact (case-insensitive) match on a mapped source's own title (SSSOM label).
+
+        Mondo does not keep every OMIM/Orphanet/DOID title as a synonym; the shipped
+        exactMatch mappings carry them, so a source title still resolves (as ``xref``).
+        """
+        lookup = getattr(self._repo, "mondo_for_xref_label", None)
+        rows = lookup(raw) if lookup is not None else []
+        distinct = {r["mondo_id"] for r in rows}
+        if not distinct:
+            return None
+        if len(distinct) > 1:
+            raise AmbiguousQueryError(
+                f"'{raw}' is the mapped title of {len(distinct)} Mondo terms.",
+                candidates=self._label_candidates(
+                    [{"mondo_id": m, "label_type": "xref"} for m in sorted(distinct)]
+                ),
+            )
+        row = rows[0]
+        meta = {
+            "matched_label": row["object_label"],
+            "label_type": "xref_title",
+            "xref_id": row["object_id"],
+        }
+        return ResolutionDetail("xref", str(row["mondo_id"]), matched_metadata=meta)
 
     def _fuzzy_or_not_found(self, raw: str) -> ResolutionDetail:
         """Exact-label miss: try a conservative synonym fuzzy / FTS resolution."""
@@ -312,8 +341,9 @@ class Resolver:
         the client back to the search tool, so the envelope chains to get_disease.
         ``suggestions`` may be supplied by a caller that already ran the search.
         """
+        relaxed: str | None = None
         if suggestions is None:
-            suggestions = self._search_suggestions(raw)
+            suggestions, relaxed = self._search_suggestions(raw)
         if suggestions:
             message = (
                 f"No exact Mondo term matches '{raw}'. The closest search hits are in "
@@ -323,24 +353,28 @@ class Resolver:
             message = (
                 f"No Mondo term matches '{raw}'. Try a MONDO id, a disease label, or an xref CURIE."
             )
-        return NotFoundError(message, suggestions=suggestions)
+        return NotFoundError(message, suggestions=suggestions, relaxed_word=relaxed)
 
-    def _search_suggestions(self, raw: str, *, limit: int = 3) -> list[dict[str, Any]]:
-        """Close-match suggestions for a failed lookup (id + name + score), best-effort.
+    def _search_suggestions(
+        self, raw: str, *, limit: int = 3
+    ) -> tuple[list[dict[str, Any]], str | None]:
+        """Close-match suggestions for a failed lookup, plus the relaxed token (if any).
 
         Tries the strict FTS query first; if it finds nothing (a multi-token query
         where the AND/prefix match fails, e.g. "ADPKD 1"), it relaxes to the most
         distinctive single token so the not_found still carries ranked candidates
         rather than dead-ending. Relaxed hits inform *suggestions only* -- they are
-        never auto-resolved.
+        never auto-resolved -- and the token is returned so the envelope can say the
+        candidates match only that word.
         """
         hits = self._safe_search(raw, limit)
-        if not hits:
-            for token in sorted(set(_TOKEN_RE.findall(raw)), key=len, reverse=True):
-                hits = self._safe_search(token, limit)
-                if hits:
-                    break
-        return _hits_to_suggestions(hits)
+        if hits:
+            return _hits_to_suggestions(hits), None
+        for token in sorted(set(_TOKEN_RE.findall(raw)), key=len, reverse=True):
+            hits = self._safe_search(token, limit)
+            if hits:
+                return _hits_to_suggestions(hits), token
+        return [], None
 
     def _safe_search(self, query: str, limit: int) -> list[dict[str, Any]]:
         """Run an FTS search, returning [] on any failure (never mask the not_found)."""

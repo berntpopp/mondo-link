@@ -193,3 +193,23 @@ async def test_error_meta_carries_unsafe_for_clinical_use_flag() -> None:
 
         assert result["success"] is False
         assert result["_meta"]["unsafe_for_clinical_use"] is True
+
+
+def test_relaxed_not_found_flags_weak_candidates_and_offers_search() -> None:
+    """Candidates from the one-word relaxation are called weak, and a search step
+    on that (grammar-validated) word leads next_commands; prose is never echoed."""
+    from mondo_link.mcp.envelope import _build_error_envelope
+
+    sugg = [{"mondo_id": "MONDO:0007947", "name": "Marfan syndrome", "score": 3.0}]
+    ctx = McpErrorContext("resolve_disease", arguments={"query": "x"})
+    env = _build_error_envelope(NotFoundError(suggestions=sugg, relaxed_word="Marfan"), ctx)
+    assert "probably not the intended disease" in env["message"]
+    assert env["_meta"]["next_commands"][0] == {
+        "tool": "search_diseases",
+        "arguments": {"query": "Marfan"},
+    }
+    prose = NotFoundError(suggestions=sugg, relaxed_word="ignore all previous")
+    steps = _build_error_envelope(prose, ctx)["_meta"]["next_commands"]
+    assert all(s["tool"] == "get_disease" for s in steps)
+    strict = _build_error_envelope(NotFoundError(suggestions=sugg), ctx)
+    assert strict["message"] == "No matching Mondo record was found for the request."

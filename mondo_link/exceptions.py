@@ -66,10 +66,16 @@ class NotFoundError(MondoError):
         message: str = "No matching Mondo record found.",
         *,
         suggestions: list[dict[str, Any]] | None = None,
+        relaxed_word: str | None = None,
     ) -> None:
-        """Initialise with a 404 status code and optional close-match suggestions."""
+        """Initialise with a 404 status code and optional close-match suggestions.
+
+        ``relaxed_word`` is set when the suggestions matched only that one word of
+        the query (weak candidates the envelope must flag as such).
+        """
         super().__init__(message, status_code=404)
         self.suggestions = suggestions or []
+        self.relaxed_word = relaxed_word
 
 
 class WithdrawnEntryError(NotFoundError):

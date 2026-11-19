@@ -442,6 +442,22 @@ class MondoRepository:
             for r in rows
         ]
 
+    def mondo_for_xref_label(self, label: str) -> list[dict[str, Any]]:
+        """Live MONDO terms whose exactMatch SSSOM mapping carries ``label`` as title.
+
+        Lets an external source's own title (e.g. an OMIM title Mondo does not keep as
+        a synonym) resolve. Case-insensitive exact match; unindexed scan (~10 ms).
+        """
+        if not self._has_xref_label():
+            return []
+        rows = self._conn.execute(
+            "SELECT DISTINCT x.mondo_id, x.object_id, x.object_label FROM xref x "
+            "JOIN term t ON t.mondo_id = x.mondo_id WHERE x.predicate = 'exactMatch' "
+            "AND t.is_obsolete = 0 AND UPPER(x.object_label) = ?",
+            (label.upper(),),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
     def count_mondo_for_xref(self, xref_id: str) -> int:
         """Total distinct MONDO terms mapping to ``xref_id`` (for pagination totals)."""
         return int(

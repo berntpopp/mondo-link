@@ -131,6 +131,11 @@ def _capabilities_version() -> str | None:
 # in the enum. ``unknown_tool``/``obsolete``/``limit_exceeded`` are message keys only.
 _FIXED_MESSAGES: dict[str, str] = {
     "not_found": "No matching Mondo record was found for the request.",
+    "not_found_weak": (
+        "No Mondo label, synonym, or mapped xref title matches the query; the candidates "
+        "share only one word with it and are probably not the intended disease. If you "
+        "have an OMIM/Orphanet id, resolve that CURIE (e.g. 'OMIM:<number>') instead."
+    ),
     "unknown_tool": "Unknown tool. Call get_server_capabilities to list the valid tools.",
     "obsolete": "The requested Mondo term is obsolete; see replaced_by / candidates.",
     "ambiguous_query": "The query matched multiple Mondo terms; pick one from candidates.",
@@ -149,6 +154,9 @@ _FIXED_MESSAGES: dict[str, str] = {
 #: injection prose, or forbidden code points, so it is safe to surface. Any other
 #: (caller-controlled, unknown) argument name is redacted, never echoed verbatim.
 _SAFE_ARG_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]{0,63}$")
+
+#: A relaxed search token is echoed only as one bounded alphabetic word.
+_SINGLE_WORD = re.compile(r"^[A-Za-z]{3,40}$")
 
 #: Closed enum for the withdrawn/obsolete status surfaced on the envelope.
 _WITHDRAWN_STATUSES = frozenset({"obsolete", "deprecated", "merged", "retired"})
@@ -267,9 +275,12 @@ def _build_error_envelope(exc: BaseException, context: McpErrorContext) -> dict[
         candidates = valid_id_entries(exc.suggestions)
         if candidates:
             envelope["candidates"] = candidates
-        envelope["_meta"]["next_commands"] = [
-            cmd("get_disease", term=c["mondo_id"]) for c in candidates[:3]
-        ] or [cmd("get_server_capabilities")]
+        steps = [cmd("get_disease", term=c["mondo_id"]) for c in candidates[:3]]
+        token = exc.relaxed_word or ""
+        if candidates and _SINGLE_WORD.match(token):  # a lone word, provably prose-free
+            envelope["message"] = _FIXED_MESSAGES["not_found_weak"]
+            steps.insert(0, cmd("search_diseases", query=token))
+        envelope["_meta"]["next_commands"] = steps or [cmd("get_server_capabilities")]
         return envelope
     # No caller value is echoed into recovery steps (prose would survive there);
     # they resolve to fixed, argument-free discovery commands.

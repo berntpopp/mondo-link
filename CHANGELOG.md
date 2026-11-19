@@ -6,6 +6,22 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-19
+
+### Added
+
+- `resolve_disease` (and every id/label entry point) resolves a mapped source's own
+  title — the SSSOM exactMatch `object_label` already in the index (OMIM, Orphanet,
+  DOID, NCIT titles Mondo does not keep as synonyms) — as `match_type: "xref"`, with
+  `matched_synonym_metadata.xref_id` naming the source record (#122).
+
+### Changed
+
+- A `not_found` whose candidates come only from the one-word relaxed search now says
+  so (the candidates are probably not the intended disease; resolve an OMIM/Orphanet
+  CURIE instead) and leads `_meta.next_commands` with `search_diseases` on that word,
+  instead of presenting unrelated terms as close matches (#122).
+
 ## [0.7.0] - 2026-11-18
 
 ### Changed
