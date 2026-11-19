@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.10.1] - 2026-11-19
+
+- Re-pin the data to `data-mondo-1ed8ac77ae72f843` (Mondo releases/2026-11-03, schema 4) so `causal_genes` ships (#127).
+
 ## [0.10.0] - 2026-11-19
 
 - `get_disease` and `resolve_disease` return `causal_genes: [{hgnc_id, symbol, source}]`:
