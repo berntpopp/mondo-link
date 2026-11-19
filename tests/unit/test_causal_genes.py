@@ -54,9 +54,11 @@ def test_resolve_disease_serves_causal_genes(service: MondoService) -> None:
     assert service.resolve_disease("Shprintzen-Goldberg syndrome")["causal_genes"] == [SKI]
 
 
-def test_no_gene_disease_has_no_field_in_compact(service: MondoService) -> None:
-    assert "causal_genes" not in service.get_disease("MONDO:0017310")
-    assert "causal_genes" not in service.resolve_disease("MONDO:0017310")
+@pytest.mark.parametrize("mode", ["minimal", "compact", "standard", "full"])
+def test_no_gene_disease_returns_empty_list(service: MondoService, mode: str) -> None:
+    # [] = "Mondo asserts no germline causal gene", distinct from the field being absent.
+    assert service.get_disease("MONDO:0017310", response_mode=mode)["causal_genes"] == []
+    assert service.resolve_disease("MONDO:0017310", response_mode=mode)["causal_genes"] == []
 
 
 def test_schema3_data_without_table_omits_field(built_db: Path, tmp_path: Path) -> None:

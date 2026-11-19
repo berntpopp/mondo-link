@@ -30,6 +30,10 @@ _WS_RUN_RE = re.compile(r"\s+")
 
 _PRESERVE_KEYS: frozenset[str] = frozenset({"_meta", "success"})
 
+#: Lists kept even when empty: ``[]`` asserts "none", distinct from the key being absent
+#: (data that lacks the source table), so no mode may drop it.
+_KEEP_EMPTY: frozenset[str] = frozenset({"causal_genes"})
+
 #: Identity/grounding anchors always retained (minimal + a sparse fieldset).
 _ANCHORS: frozenset[str] = frozenset({"mondo_id", "name", "mondo_version"})
 _FIELD_ANCHORS: frozenset[str] = _ANCHORS | _PRESERVE_KEYS
@@ -120,7 +124,7 @@ def _shape_minimal(record: dict[str, Any]) -> dict[str, Any]:
     for key, value in record.items():
         if key in keep:
             shaped[key] = value
-        elif _is_collection(value) and not _is_empty(value):
+        elif _is_collection(value) and (key in _KEEP_EMPTY or not _is_empty(value)):
             shaped[key] = _project_records(key, value)
     return shaped
 
@@ -140,7 +144,7 @@ def shape_disease(record: dict[str, Any], mode: str) -> dict[str, Any]:
     for key, value in record.items():
         if key == "synonyms":
             value = _plain_synonyms(value)
-        if key not in _PRESERVE_KEYS and _is_empty(value):
+        if key not in _PRESERVE_KEYS | _KEEP_EMPTY and _is_empty(value):
             continue
         out[key] = value
     return out
