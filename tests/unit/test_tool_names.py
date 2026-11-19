@@ -87,3 +87,36 @@ async def test_tool_names_conform_to_standard_v1_1() -> None:
         assert name.split("_", 1)[0] in _CANONICAL_VERBS, (
             f"{name!r} must start with a canonical verb {sorted(_CANONICAL_VERBS)}"
         )
+
+
+# ponytail: copy of genefoundry-router scripts/surface.py `lead_states_return` (D1,
+# Tool-Schema Documentation v1.1); re-vendor if the router's rule changes.
+_LEAD_VERBS = (  # noqa: SIM905 -- kept identical to the router source
+    "get fetch retrieve list look lookup search find resolve report read predict annotate "
+    "compute calculate count summarize summarise map translate convert describe show check "
+    "validate classify score rank query browse discover explain compare diff normalize normalise "
+    "expand evaluate assess enumerate identify locate export download match suggest recommend "
+    "inspect generate render estimate"
+).split()
+_VERB_LEAD = re.compile(
+    rf"^(?:use this (?:tool )?to )?(?:{'|'.join(_LEAD_VERBS)})(?:s|es|ies)?\b", re.IGNORECASE
+)
+_RETURNS = re.compile(
+    r"(?<!not )(?<!n't )(?<!n\u2019t )(?<!never )\breturn(?:s|ed|ing)?\b(?!\s*[~<\d])|→|->",
+    re.IGNORECASE,
+)
+_FIELD_LIST = re.compile(r"\w+\W+\w+[^:]*:\s+[^.;:]+,")
+_SENTENCE_END = re.compile(r"(?<!e\.g\.)(?<!i\.e\.)(?<=[.!?])\s+")
+
+
+def _lead_states_return(description: str | None) -> bool:
+    text = " ".join((description or "").split())
+    lead = _SENTENCE_END.split(text, maxsplit=1)[0][:300]
+    return bool(_VERB_LEAD.match(lead) or _RETURNS.search(lead) or _FIELD_LIST.search(lead))
+
+
+async def test_descriptions_lead_with_what_they_return() -> None:
+    """D1: every tool's first sentence says what it returns."""
+    tools = await _build_mcp().list_tools()
+    failing = sorted(t.name for t in tools if not _lead_states_return(t.description))
+    assert not failing, f"description lead must state what the tool returns: {failing}"

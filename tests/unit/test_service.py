@@ -151,7 +151,7 @@ def test_search_compact_returns_snippet_not_full_definition(service: MondoServic
     res = service.search_diseases("huntington", response_mode="compact")
     hit = next(r for r in res["results"] if r["mondo_id"] == HD)
     assert "definition" not in hit  # full paragraph reserved for standard/full
-    assert "score" in hit
+    assert {"mondo_id", "name", "score"} <= set(hit)  # fields the description lead names
     if hit.get("definition_snippet"):
         snippet = hit["definition_snippet"]
         # v1.1 untrusted_text: fenced, not a bare string (Response-Envelope v1.1).

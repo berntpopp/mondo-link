@@ -62,7 +62,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
         tags={"disease", "search"},
         description=(
             "Full-text search over Mondo disease names, synonyms, and definitions "
-            "(FTS, relevance-ranked). Returns {mondo_id, name, score} -- compact adds "
+            "(FTS, relevance-ranked); returns {mondo_id, name, score} -- compact adds "
             "a short definition_snippet; standard/full add the complete definition -- "
             "plus a pagination block {total, returned, limit, offset, truncated, "
             "next_offset}. When truncated, next_commands carries a forward-page step "
