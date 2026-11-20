@@ -57,6 +57,13 @@ relationship: has_material_basis_in_germline_mutation_in http://identifiers.org/
 relationship: has_material_basis_in_germline_mutation_in http://identifiers.org/ncbigene/403811 {source="OMIA:001516-9615"} ! KIT
 
 [Term]
+id: MONDO:0005012
+name: cutaneous melanoma
+xref: NCIT:C3510
+xref: ONCOTREE:SKCM {source="MONDO:equivalentTo"}
+is_a: MONDO:0000001 ! disease or disorder
+
+[Term]
 id: MONDO:0099999
 name: obsolete legacy disorder
 is_obsolete: true

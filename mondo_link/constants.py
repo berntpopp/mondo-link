@@ -29,7 +29,9 @@ MAX_BATCH_ITEMS = 50
 #: the body runs (schema == runtime); the tuple is DERIVED from it, never a second copy.
 #: get_disease still surfaces every xref group (incl. ICD/EFO/...); only the map filter is
 #: constrained to this first-class set, so the schema never promises more than it accepts.
-XrefPrefix = Literal["OMIM", "ORPHA", "DOID", "NCIT", "UMLS", "MESH", "MEDGEN", "SCTID", "GARD"]
+XrefPrefix = Literal[
+    "OMIM", "ORPHA", "DOID", "NCIT", "UMLS", "MESH", "MEDGEN", "SCTID", "GARD", "ONCOTREE"
+]
 XREF_PREFIXES: tuple[str, ...] = get_args(XrefPrefix)
 
 #: Mapping predicate -> rank for ordering cross-references (lower is stronger).

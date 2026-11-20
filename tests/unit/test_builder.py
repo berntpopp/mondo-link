@@ -39,7 +39,7 @@ def _conn(config: ServerSettings) -> sqlite3.Connection:
 
 def test_build_meta(built: builder.BuildMeta) -> None:
     assert "2026-06-01" in built.mondo_version
-    assert built.term_count == 8  # 7 active + 1 obsolete = all stanzas
+    assert built.term_count == 9  # 8 active + 1 obsolete = all stanzas
     assert built.obsolete_count == 1
     assert built.closure_count > 0
     assert built.mapping_count == 3
@@ -109,7 +109,7 @@ def test_top_grouping_rows(config: ServerSettings, built: builder.BuildMeta) -> 
     conn = _conn(config)
     try:
         n = conn.execute("SELECT COUNT(*) FROM mondo_top_grouping").fetchone()[0]
-        assert n == 3
+        assert n == 4
     finally:
         conn.close()
 

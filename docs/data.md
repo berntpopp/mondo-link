@@ -62,7 +62,7 @@ every record payload echoes `mondo_version`.
 OBO `xref:` lines and SSSOM rows are merged into one `xref` index, each row tagged
 with its `origin` (`obo_xref` | `sssom`) and a mapping **predicate**, ranked
 `exactMatch > equivalentTo > closeMatch > narrowMatch > broadMatch > xref`.
-First-class prefixes: OMIM, ORPHA, DOID, NCIT, UMLS, MESH, MEDGEN, SCTID, GARD.
+First-class prefixes: OMIM, ORPHA, DOID, NCIT, UMLS, MESH, MEDGEN, SCTID, GARD, ONCOTREE.
 See [architecture.md](architecture.md#cross-reference-model) for the schema.
 
 ## Citation contract
