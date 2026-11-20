@@ -59,7 +59,7 @@ PrefixesArg = Annotated[
     list[XrefPrefix] | None,
     Field(
         description="Restrict to these first-class cross-reference sources "
-        "(OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD). An unrecognised prefix is "
+        "(OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD/ONCOTREE). An unrecognised prefix is "
         "rejected with invalid_input. Omit to return every source.",
         examples=[["OMIM", "ORPHA"], ["DOID"]],
     ),

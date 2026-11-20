@@ -117,7 +117,7 @@ def test_top_groupings(terms: dict[str, dict]) -> None:
     groupings = parser.mondo_top_groupings(terms)
     ids = [g[0] for g in groupings]
     names = [g[1] for g in groupings]
-    assert set(ids) == {"MONDO:0000002", "MONDO:0000003", "MONDO:0000004"}
+    assert set(ids) == {"MONDO:0000002", "MONDO:0000003", "MONDO:0000004", "MONDO:0005012"}
     # sorted by name
     assert names == sorted(names)
     # order index assigned

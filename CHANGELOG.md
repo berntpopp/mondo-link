@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.1] - 2026-11-20
+
+- `ONCOTREE` is a first-class xref prefix: `map_cross_ontology(prefixes=["ONCOTREE"])` is accepted (it was rejected by the closed enum). Mondo already carries ~558 OncoTree `equivalentTo` xrefs, so `resolve_disease("ONCOTREE:SKCM")` → `MONDO:0005012`; no data rebuild.
+
 ## [0.11.0] - 2026-11-19
 
 - `response_mode` is now honoured by `get_disease_ancestors`/`_descendants`/`_parents`/`_children` and `map_cross_ontology` (standard/full add the anchor term's fenced `definition`) and by `resolve_xref` (standard/full add each match's `prefix` + `object_id`). It was advertised but ignored; compact output is unchanged (behaviour probe, router #314).

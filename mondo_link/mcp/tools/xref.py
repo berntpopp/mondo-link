@@ -28,7 +28,7 @@ def register_xref_tools(mcp: FastMCP) -> None:
         tags={"xref", "resolve"},
         description=(
             "Resolve an external cross-reference CURIE (OMIM/Orphanet/DOID/NCIT/UMLS/"
-            "MeSH/MedGen/SNOMED/GARD) back to the Mondo term(s) that map to it, ranked "
+            "MeSH/MedGen/SNOMED/GARD/ONCOTREE) back to the Mondo term(s) that map to it, ranked "
             "by mapping predicate (exactMatch > equivalentTo > closeMatch > ...). "
             "Returns matches[] plus a pagination block {total, returned, limit, "
             "offset, truncated, next_offset}; when truncated, next_commands carries a "
@@ -68,7 +68,7 @@ def register_xref_tools(mcp: FastMCP) -> None:
         description=(
             "List a Mondo term's cross-references to other ontologies, grouped by target "
             "prefix. get_disease surfaces every source; this tool's `prefixes` filter is "
-            "the first-class set (OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD), each "
+            "the first-class set (OMIM/ORPHA/DOID/NCIT/UMLS/MESH/MEDGEN/SCTID/GARD/ONCOTREE), each "
             "with its mapping predicate and origin (obo_xref|sssom). An unrecognised prefix "
             "is rejected with invalid_input. "
             "Signature: map_cross_ontology(term, prefixes=, response_mode=)."
