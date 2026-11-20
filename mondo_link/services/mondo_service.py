@@ -284,6 +284,12 @@ class MondoService:
         genes = self.repo.causal_genes(mondo_id)
         return None if genes is None else [{**g, "source": _GENE_SOURCE} for g in genes]
 
+    def gene_lookup_ids(self, mondo_id: str) -> list[str]:
+        """OMIM/ORPHA ids Mondo maps as exact/equivalent (never a loose ``xref``), OMIM first."""
+        rows = self.repo.xrefs_for(mondo_id, ["OMIM", "ORPHA"])
+        strong = (x["object_id"] for x in rows if x["predicate"] in ("exactMatch", "equivalentTo"))
+        return sorted(dict.fromkeys(strong), key=lambda i: not i.startswith("OMIM:"))
+
     def _grouped_xrefs(self, mondo_id: str, prefixes: list[str] | None = None) -> dict[str, Any]:
         """Group cross-references by prefix, ONE entry per target id.
 

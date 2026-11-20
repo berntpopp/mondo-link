@@ -82,7 +82,26 @@ def after_capabilities() -> list[dict[str, Any]]:
 
 #: Router-namespaced tools on sibling fleet servers (genefoundry router), with the
 #: arguments a step may pass. Not in this server's TOOLS; the router leaves them as-is.
-FLEET_TOOLS: dict[str, frozenset[str]] = {"hgnc_resolve_symbol": frozenset({"query"})}
+FLEET_TOOLS: dict[str, frozenset[str]] = {
+    "hgnc_resolve_symbol": frozenset({"query"}),
+    "hpo_get_genes_for_disease": frozenset({"disease_id"}),
+}
+
+#: Typed absence notes for ``causal_genes: []`` (issue #134): an empty list is Mondo's
+#: silence, not evidence that no gene is known. Fixed strings; the lookup is named only
+#: when a step is actually offered.
+_NO_GENE = "Mondo asserts no causal gene for {}; that is not evidence none is known. "
+_SEE_MAP = "map_cross_ontology shows whether {} has an OMIM/Orphanet mapping."
+NO_GENE_NOTE = _NO_GENE.format("this term") + _SEE_MAP.format("it")
+NO_GENE_NOTE_WITH_STEP = (
+    _NO_GENE.format("this term") + "Look genes up by its OMIM/Orphanet id (_meta.next_commands)."
+)
+NO_GENE_NOTE_BATCH = _NO_GENE.format("rows with causal_genes: []") + _SEE_MAP.format("a term")
+
+
+def no_gene_steps(disease_ids: list[str]) -> list[dict[str, Any]]:
+    """Gene lookup (hpo-link) by the OMIM/ORPHA ids Mondo maps as equivalent (max two)."""
+    return [cmd("hpo_get_genes_for_disease", disease_id=i) for i in disease_ids[:2]]
 
 
 def _gene_steps(payload: dict[str, Any]) -> list[dict[str, Any]]:
