@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field
 
 from mondo_link.constants import XrefPrefix
+from mondo_link.mcp.service_adapters import get_mondo_service
 
 ResponseMode = Annotated[
     Literal["minimal", "compact", "standard", "full"],
@@ -64,3 +65,15 @@ PrefixesArg = Annotated[
         examples=[["OMIM", "ORPHA"], ["DOID"]],
     ),
 ]
+
+
+def needs_absence_note(record: dict[str, Any], response_mode: str) -> bool:
+    """A live term's ``causal_genes: []`` gets the note; ``minimal`` and obsolete terms do not.
+
+    Obsolescence is read from the index, not the record: a ``fields`` projection can drop
+    the record's own ``obsolete`` flag.
+    """
+    if response_mode == "minimal" or record.get("causal_genes") != []:
+        return False
+    term = get_mondo_service().repo.get_term(record["mondo_id"])
+    return term is not None and not term["is_obsolete"]

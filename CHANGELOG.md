@@ -8,7 +8,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [0.11.2] - 2026-11-20
 
-- `resolve_disease` / `get_disease` with `causal_genes: []` now carry `absence_note` (Mondo asserts no germline causal gene; not evidence that none is known) and, when Mondo maps the term to an OMIM id as exact/equivalent, a ready-to-send `hpo_get_genes_for_disease(disease_id="OMIM:...")` step in `_meta.next_commands`. `causal_genes` itself and the tool definitions are unchanged (#134).
+- `resolve_disease` / `get_disease` with `causal_genes: []` now carry `absence_note` (Mondo asserts no causal gene; not evidence that none is known) and, when Mondo maps the term to an OMIM or Orphanet id as exact/equivalent, ready-to-send `hpo_get_genes_for_disease(disease_id="OMIM:..." | "ORPHA:...")` steps in `_meta.next_commands` (at most two, OMIM first). Obsolete terms and `response_mode="minimal"` get neither. `causal_genes` itself and the tool definitions are unchanged (#134).
+- `resolve_disease_batch` / `get_disease_batch` carry one top-level `absence_note` (never per row) when any row has `causal_genes: []` (#134).
 
 ## [0.11.1] - 2026-11-20
 

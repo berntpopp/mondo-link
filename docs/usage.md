@@ -69,8 +69,12 @@ get_disease(term="MONDO:0008426")
 
 `causal_genes: []` means Mondo asserts no germline causal gene, not that none is
 known: the response then carries `absence_note` and, when the term has an
-exact/equivalent OMIM mapping, `_meta.next_commands` chains to
-`hpo_get_genes_for_disease(disease_id="OMIM:...")`.
+exact/equivalent OMIM or Orphanet mapping, `_meta.next_commands` chains to
+`hpo_get_genes_for_disease(disease_id="OMIM:..." | "ORPHA:...")` (at most two
+steps, OMIM first). Obsolete terms and `response_mode="minimal"` get neither.
+`absence_note` is added by the server and cannot be selected through `fields`.
+The batch tools carry one top-level `absence_note` (never per row, no gene-lookup
+steps) when any row has `causal_genes: []`.
 
 A free-text label miss returns `not_found` with the closest hits in `candidates`
 and `_meta.next_commands` chaining to `get_disease` on the top hit.

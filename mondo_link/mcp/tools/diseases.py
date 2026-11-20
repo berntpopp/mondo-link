@@ -10,14 +10,21 @@ from pydantic import Field
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
 from mondo_link.mcp.next_commands import (
-    NO_CAUSAL_GENE_NOTE,
+    NO_GENE_NOTE,
+    NO_GENE_NOTE_WITH_STEP,
     after_get_disease,
     after_resolve_disease,
     after_search,
     no_gene_steps,
 )
 from mondo_link.mcp.service_adapters import get_mondo_service
-from mondo_link.mcp.tools._common import FieldsArg, QueryStr, ResponseMode, TermStr
+from mondo_link.mcp.tools._common import (
+    FieldsArg,
+    QueryStr,
+    ResponseMode,
+    TermStr,
+    needs_absence_note,
+)
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -33,12 +40,13 @@ _GENES_NOTE = (
 )
 
 
-def _no_gene_followup(payload: dict[str, Any]) -> list[dict[str, Any]]:
-    """``causal_genes: []``: add the typed absence note; return the OMIM gene-lookup steps."""
-    if payload.get("causal_genes") != []:
+def _no_gene_followup(payload: dict[str, Any], response_mode: str) -> list[dict[str, Any]]:
+    """``causal_genes: []``: add the typed absence note; return the gene-lookup steps."""
+    if not needs_absence_note(payload, response_mode):
         return []
-    payload["absence_note"] = NO_CAUSAL_GENE_NOTE
-    return no_gene_steps(get_mondo_service().omim_equivalents(payload["mondo_id"]))
+    steps = no_gene_steps(get_mondo_service().gene_lookup_ids(payload["mondo_id"]))
+    payload["absence_note"] = NO_GENE_NOTE_WITH_STEP if steps else NO_GENE_NOTE
+    return steps
 
 
 def register_disease_tools(mcp: FastMCP) -> None:
@@ -70,7 +78,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
             payload = get_mondo_service().resolve_disease(query, response_mode=response_mode)
             payload.setdefault("_meta", {})["next_commands"] = [
                 *after_resolve_disease(payload),
-                *_no_gene_followup(payload),
+                *_no_gene_followup(payload, response_mode),
             ]
             return payload
 
@@ -156,7 +164,7 @@ def register_disease_tools(mcp: FastMCP) -> None:
             )
             payload.setdefault("_meta", {})["next_commands"] = [
                 *after_get_disease(payload),
-                *_no_gene_followup(payload),
+                *_no_gene_followup(payload, response_mode),
             ]
             return payload
 

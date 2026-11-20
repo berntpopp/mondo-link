@@ -31,11 +31,15 @@ is_a: MONDO:0000001 ! disease or disorder
 [Term]
 id: MONDO:0015159
 name: multiple congenital anomalies syndrome
+xref: OMIM:900001 {source="MONDO:equivalentTo"}
+xref: OMIM:900002 {source="MONDO:equivalentTo"}
+xref: Orphanet:900003 {source="MONDO:equivalentTo"}
 is_a: MONDO:0000004 ! connective tissue disorder
 
 [Term]
 id: MONDO:0017310
 name: Marfan and Marfan-related disorder
+xref: Orphanet:284993 {source="MONDO:equivalentTo"}
 is_a: MONDO:0000002 ! cardiovascular disorder
 is_a: MONDO:0000004 ! connective tissue disorder
 
@@ -68,6 +72,7 @@ is_a: MONDO:0000001 ! disease or disorder
 [Term]
 id: MONDO:0099999
 name: obsolete legacy disorder
+xref: OMIM:900009 {source="MONDO:equivalentTo"}
 is_obsolete: true
 replaced_by: MONDO:0008426
 consider: MONDO:0000003

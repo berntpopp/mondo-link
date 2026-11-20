@@ -17,9 +17,13 @@ from mondo_link.constants import MAX_BATCH_ITEMS
 from mondo_link.exceptions import InvalidInputError
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, classify_exception, run_mcp_tool
-from mondo_link.mcp.next_commands import after_get_disease_batch, after_resolve_batch
+from mondo_link.mcp.next_commands import (
+    NO_GENE_NOTE_BATCH,
+    after_get_disease_batch,
+    after_resolve_batch,
+)
 from mondo_link.mcp.service_adapters import get_mondo_service
-from mondo_link.mcp.tools._common import FieldsArg, ResponseMode
+from mondo_link.mcp.tools._common import FieldsArg, ResponseMode, needs_absence_note
 from mondo_link.mcp.untrusted_content import (
     UntrustedText,
     enforce_untrusted_text_limits,
@@ -41,6 +45,12 @@ def _require_batch(items: list[str], field: str) -> None:
         raise InvalidInputError(
             f"{field} accepts at most {MAX_BATCH} items (got {len(items)}).", field=field
         )
+
+
+def _note_no_gene_rows(payload: dict[str, Any], response_mode: str) -> None:
+    """ONE top-level absence note (never per row) when any row has ``causal_genes: []``."""
+    if any(needs_absence_note(row, response_mode) for row in payload["results"]):
+        payload["absence_note"] = NO_GENE_NOTE_BATCH
 
 
 def register_batch_tools(mcp: FastMCP) -> None:
@@ -95,6 +105,7 @@ def register_batch_tools(mcp: FastMCP) -> None:
                         {"index": index, "ok": False, "error_code": code, "message": message}
                     )
             payload: dict[str, Any] = {"count": len(results), "results": results}
+            _note_no_gene_rows(payload, response_mode)
             payload.setdefault("_meta", {})["next_commands"] = after_resolve_batch(payload)
             return payload
 
@@ -159,6 +170,7 @@ def register_batch_tools(mcp: FastMCP) -> None:
                     )
             enforce_untrusted_text_limits(fenced)
             payload: dict[str, Any] = {"count": len(results), "results": results}
+            _note_no_gene_rows(payload, response_mode)
             payload.setdefault("_meta", {})["next_commands"] = after_get_disease_batch(payload)
             return payload
 
