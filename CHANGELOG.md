@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.2] - 2026-11-20
+
+- `resolve_disease` / `get_disease` with `causal_genes: []` now carry `absence_note` (Mondo asserts no germline causal gene; not evidence that none is known) and, when Mondo maps the term to an OMIM id as exact/equivalent, a ready-to-send `hpo_get_genes_for_disease(disease_id="OMIM:...")` step in `_meta.next_commands`. `causal_genes` itself and the tool definitions are unchanged (#134).
+
 ## [0.11.1] - 2026-11-20
 
 - `ONCOTREE` is a first-class xref prefix: `map_cross_ontology(prefixes=["ONCOTREE"])` is accepted (it was rejected by the closed enum). Mondo already carries ~558 OncoTree `equivalentTo` xrefs, so `resolve_disease("ONCOTREE:SKCM")` → `MONDO:0005012`; no data rebuild.

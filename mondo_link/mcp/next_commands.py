@@ -82,7 +82,24 @@ def after_capabilities() -> list[dict[str, Any]]:
 
 #: Router-namespaced tools on sibling fleet servers (genefoundry router), with the
 #: arguments a step may pass. Not in this server's TOOLS; the router leaves them as-is.
-FLEET_TOOLS: dict[str, frozenset[str]] = {"hgnc_resolve_symbol": frozenset({"query"})}
+FLEET_TOOLS: dict[str, frozenset[str]] = {
+    "hgnc_resolve_symbol": frozenset({"query"}),
+    "hpo_get_genes_for_disease": frozenset({"disease_id"}),
+}
+
+#: Typed absence note for ``causal_genes: []`` (issue #134): an empty list is Mondo's
+#: silence, not evidence that no gene is known.
+NO_CAUSAL_GENE_NOTE = (
+    "Mondo asserts no germline causal gene for this term "
+    "(has_material_basis_in_germline_mutation_in). This is not evidence that no gene is "
+    "known: look up gene associations by the term's OMIM/Orphanet id with "
+    "hpo_get_genes_for_disease, or validity curations in GenCC/ClinGen."
+)
+
+
+def no_gene_steps(omim_ids: list[str]) -> list[dict[str, Any]]:
+    """Gene lookup (hpo-link) by each OMIM id Mondo maps as equivalent to the term."""
+    return [cmd("hpo_get_genes_for_disease", disease_id=i) for i in omim_ids[:2]]
 
 
 def _gene_steps(payload: dict[str, Any]) -> list[dict[str, Any]]:

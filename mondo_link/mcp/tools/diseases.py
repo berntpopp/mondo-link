@@ -9,7 +9,13 @@ from pydantic import Field
 
 from mondo_link.mcp.annotations import READ_ONLY_OPEN_WORLD
 from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
-from mondo_link.mcp.next_commands import after_get_disease, after_resolve_disease, after_search
+from mondo_link.mcp.next_commands import (
+    NO_CAUSAL_GENE_NOTE,
+    after_get_disease,
+    after_resolve_disease,
+    after_search,
+    no_gene_steps,
+)
 from mondo_link.mcp.service_adapters import get_mondo_service
 from mondo_link.mcp.tools._common import FieldsArg, QueryStr, ResponseMode, TermStr
 
@@ -25,6 +31,14 @@ _GENES_NOTE = (
     "for the gene's band and details. causal_genes: [] means Mondo asserts none; the "
     "field is absent only when the loaded data predates the gene table."
 )
+
+
+def _no_gene_followup(payload: dict[str, Any]) -> list[dict[str, Any]]:
+    """``causal_genes: []``: add the typed absence note; return the OMIM gene-lookup steps."""
+    if payload.get("causal_genes") != []:
+        return []
+    payload["absence_note"] = NO_CAUSAL_GENE_NOTE
+    return no_gene_steps(get_mondo_service().omim_equivalents(payload["mondo_id"]))
 
 
 def register_disease_tools(mcp: FastMCP) -> None:
@@ -54,7 +68,10 @@ def register_disease_tools(mcp: FastMCP) -> None:
     ) -> dict[str, Any] | ToolResult:
         async def call() -> dict[str, Any]:
             payload = get_mondo_service().resolve_disease(query, response_mode=response_mode)
-            payload.setdefault("_meta", {})["next_commands"] = after_resolve_disease(payload)
+            payload.setdefault("_meta", {})["next_commands"] = [
+                *after_resolve_disease(payload),
+                *_no_gene_followup(payload),
+            ]
             return payload
 
         return await run_mcp_tool(
@@ -137,7 +154,10 @@ def register_disease_tools(mcp: FastMCP) -> None:
             payload = get_mondo_service().get_disease(
                 term, response_mode=response_mode, fields=fields
             )
-            payload.setdefault("_meta", {})["next_commands"] = after_get_disease(payload)
+            payload.setdefault("_meta", {})["next_commands"] = [
+                *after_get_disease(payload),
+                *_no_gene_followup(payload),
+            ]
             return payload
 
         return await run_mcp_tool(

@@ -67,6 +67,11 @@ get_disease(term="MONDO:0008426")
    causal_genes: [{hgnc_id, symbol, source}], mondo_version}
 ```
 
+`causal_genes: []` means Mondo asserts no germline causal gene, not that none is
+known: the response then carries `absence_note` and, when the term has an
+exact/equivalent OMIM mapping, `_meta.next_commands` chains to
+`hpo_get_genes_for_disease(disease_id="OMIM:...")`.
+
 A free-text label miss returns `not_found` with the closest hits in `candidates`
 and `_meta.next_commands` chaining to `get_disease` on the top hit.
 

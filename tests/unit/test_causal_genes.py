@@ -5,6 +5,7 @@ from __future__ import annotations
 import shutil
 import sqlite3
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -89,5 +90,39 @@ def test_fleet_tool_targets_exist() -> None:
     assert fleet
     for s in fleet:
         assert set(s["arguments"]) <= nc.FLEET_TOOLS[s["tool"]]
-    hgnc_link_surface = {"hgnc_resolve_symbol": frozenset({"query"})}
-    assert hgnc_link_surface == nc.FLEET_TOOLS
+    # hpo-link: `get_genes_for_disease(disease_id)` behind namespace `hpo` (issue #134).
+    fleet_surface = {
+        "hgnc_resolve_symbol": frozenset({"query"}),
+        "hpo_get_genes_for_disease": frozenset({"disease_id"}),
+    }
+    assert fleet_surface == nc.FLEET_TOOLS
+
+
+_HPO_STEP = {"tool": "hpo_get_genes_for_disease", "arguments": {"disease_id": "OMIM:155600"}}
+
+
+@pytest.mark.parametrize(("tool", "arg"), [("resolve_disease", "query"), ("get_disease", "term")])
+async def test_no_gene_term_says_so_and_chains_to_omim_gene_lookup(
+    facade: Any, structured: Any, tool: str, arg: str
+) -> None:
+    # Issue #134: [] must not read as "no gene known". MONDO:0005012 has no Mondo gene,
+    # one equivalent OMIM xref (chained) and one loose OMIM xref (never chained).
+    payload = structured(await facade.call_tool(tool, {arg: "MONDO:0005012"}))
+    assert payload["causal_genes"] == []
+    assert "Mondo asserts no" in payload["absence_note"]
+    hpo = [s for s in payload["_meta"]["next_commands"] if s["tool"].startswith("hpo_")]
+    assert hpo == [_HPO_STEP]
+
+
+async def test_no_gene_term_without_omim_xref_has_note_only(facade: Any, structured: Any) -> None:
+    payload = structured(await facade.call_tool("get_disease", {"term": "MONDO:0017310"}))
+    assert payload["causal_genes"] == []
+    assert "absence_note" in payload
+    assert not [s for s in payload["_meta"]["next_commands"] if s["tool"].startswith("hpo_")]
+
+
+async def test_term_with_genes_has_no_absence_note(facade: Any, structured: Any) -> None:
+    payload = structured(await facade.call_tool("resolve_disease", {"query": SGS}))
+    assert payload["causal_genes"]
+    assert "absence_note" not in payload
+    assert not [s for s in payload["_meta"]["next_commands"] if s["tool"].startswith("hpo_")]
