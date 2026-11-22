@@ -64,8 +64,13 @@ sparse projection (identity anchors are always returned).
 get_disease(term="MONDO:0008426")
 → {mondo_id, name, definition, synonyms[], xrefs: {OMIM:[...], ORPHA:[...], DOID:[...]},
    parents[], children[], top_groupings[], subsets[], obsolete, replaced_by,
-   causal_genes: [{hgnc_id, symbol, source}], mondo_version}
+   causal_genes: [{hgnc_id, symbol, source, from_descendant?}], mondo_version}
 ```
+
+A term with no gene of its own (an umbrella such as MONDO:0031376 congenital
+disorder of deglycosylation) lists the distinct genes of its descendants, each
+with `from_descendant` naming the child term that carries it, when there are at
+most 20; a broader grouping keeps `causal_genes: []`.
 
 `causal_genes: []` means Mondo asserts no germline causal gene, not that none is
 known: the response then carries `absence_note` and, when the term has an

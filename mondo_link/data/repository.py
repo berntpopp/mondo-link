@@ -314,23 +314,11 @@ class MondoRepository:
         ).fetchall()
         return [{"mondo_id": r["mondo_id"], "name": r["name"]} for r in rows]
 
-    def count_ancestors(self, mondo_id: str) -> int:
-        """Total transitive ancestors of ``mondo_id`` (excluding self)."""
-        return int(
-            self._conn.execute(
-                "SELECT COUNT(*) AS n FROM mondo_closure WHERE mondo_id = ? AND ancestor_id != ?",
-                (mondo_id, mondo_id),
-            ).fetchone()["n"]
-        )
-
-    def count_descendants(self, mondo_id: str) -> int:
-        """Total transitive descendants of ``mondo_id`` (excluding self)."""
-        return int(
-            self._conn.execute(
-                "SELECT COUNT(*) AS n FROM mondo_closure WHERE ancestor_id = ? AND mondo_id != ?",
-                (mondo_id, mondo_id),
-            ).fetchone()["n"]
-        )
+    def count_closure(self, mondo_id: str, *, ancestors: bool) -> int:
+        """Total transitive ancestors (or descendants) of ``mondo_id``, excluding self."""
+        own, other = ("mondo_id", "ancestor_id") if ancestors else ("ancestor_id", "mondo_id")
+        sql = f"SELECT COUNT(*) AS n FROM mondo_closure WHERE {own} = ? AND {other} != ?"  # noqa: S608
+        return int(self._conn.execute(sql, (mondo_id, mondo_id)).fetchone()["n"])
 
     def top_groupings(self, mondo_id: str) -> list[dict[str, Any]]:
         """Top-level disease groupings that are ancestors of ``mondo_id``."""
@@ -369,6 +357,15 @@ class MondoRepository:
             if "no such table" in str(exc):
                 return None
             raise DataUnavailableError("The Mondo database could not be read.") from exc
+
+    def descendant_causal_genes(self, mondo_id: str, *, limit: int) -> list[dict[str, Any]]:
+        """Distinct genes of ``mondo_id``'s descendants, each with the first child carrying it."""
+        sql = (
+            "SELECT g.hgnc_id, g.symbol, MIN(g.mondo_id) AS from_descendant FROM mondo_closure c "
+            "JOIN causal_gene g USING (mondo_id) WHERE c.ancestor_id = ? AND c.mondo_id != ? "
+            "GROUP BY g.hgnc_id ORDER BY g.symbol LIMIT ?"
+        )
+        return [dict(r) for r in self._conn.execute(sql, (mondo_id, mondo_id, limit))]
 
     # -- cross-references ------------------------------------------------------
 

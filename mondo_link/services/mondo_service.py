@@ -52,6 +52,9 @@ _SEARCH_MAX_OBJECTS = 200
 _UNTRUSTED_SOURCE = "mondo"
 #: Provenance of ``causal_genes``: Mondo's germline-basis relation (not validity curation).
 _GENE_SOURCE = "Mondo has_material_basis_in_germline_mutation_in"
+#: An umbrella term with no gene of its own lists its descendants' genes (issue #136),
+#: but only when all of them fit: a broad grouping is not a gene list.
+DESCENDANT_GENE_CAP = 20
 
 
 def _finalize_xref_entry(entry: dict[str, Any]) -> dict[str, Any]:
@@ -282,6 +285,9 @@ class MondoService:
     def _causal_genes(self, mondo_id: str) -> list[dict[str, Any]] | None:
         """Mondo's germline-basis genes with provenance; ``None`` when the data lacks them."""
         genes = self.repo.causal_genes(mondo_id)
+        if genes == []:
+            rolled = self.repo.descendant_causal_genes(mondo_id, limit=DESCENDANT_GENE_CAP + 1)
+            genes = rolled if len(rolled) <= DESCENDANT_GENE_CAP else []
         return None if genes is None else [{**g, "source": _GENE_SOURCE} for g in genes]
 
     def gene_lookup_ids(self, mondo_id: str) -> list[str]:
@@ -362,10 +368,10 @@ class MondoService:
         offset = max(0, offset)
         if kind == "ancestors":
             rows = self.repo.ancestors(mondo_id, limit=limit, offset=offset)
-            total = self.repo.count_ancestors(mondo_id)
+            total = self.repo.count_closure(mondo_id, ancestors=True)
         else:
             rows = self.repo.descendants(mondo_id, limit=limit, offset=offset)
-            total = self.repo.count_descendants(mondo_id)
+            total = self.repo.count_closure(mondo_id, ancestors=False)
         out = {
             "mondo_id": mondo_id,
             "name": record["name"] if record else None,

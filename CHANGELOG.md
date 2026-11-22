@@ -6,6 +6,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.11.3] - 2026-11-22
+
+- An umbrella term that asserts no gene itself now lists the distinct genes asserted on its descendants in `causal_genes`, each row marked `from_descendant: <child MONDO id>` (kept at `response_mode="minimal"`), when there are at most 20 of them; a broader grouping keeps `causal_genes: []` and the `absence_note`. E.g. `resolve_disease("Congenital disorder of deglycosylation")` (MONDO:0031376) returned `[]`; it now returns MAN2C1 (MONDO:0030770) and NGLY1 (MONDO:0800044). The `resolve_disease` / `get_disease` description says so (#136).
+
 ## [0.11.2] - 2026-11-20
 
 - `resolve_disease` / `get_disease` with `causal_genes: []` now carry `absence_note` (Mondo asserts no causal gene; not evidence that none is known) and, when Mondo maps the term to an OMIM or Orphanet id as exact/equivalent, ready-to-send `hpo_get_genes_for_disease(disease_id="OMIM:..." | "ORPHA:...")` steps in `_meta.next_commands` (at most two, OMIM first). Obsolete terms and `response_mode="minimal"` get neither. `causal_genes` itself and the tool definitions are unchanged (#134).
