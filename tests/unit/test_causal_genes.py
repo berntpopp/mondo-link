@@ -58,8 +58,26 @@ def test_resolve_disease_serves_causal_genes(service: MondoService) -> None:
 @pytest.mark.parametrize("mode", ["minimal", "compact", "standard", "full"])
 def test_no_gene_disease_returns_empty_list(service: MondoService, mode: str) -> None:
     # [] = "Mondo asserts no germline causal gene", distinct from the field being absent.
-    assert service.get_disease("MONDO:0017310", response_mode=mode)["causal_genes"] == []
-    assert service.resolve_disease("MONDO:0017310", response_mode=mode)["causal_genes"] == []
+    assert service.get_disease("MONDO:0005012", response_mode=mode)["causal_genes"] == []
+    assert service.resolve_disease("MONDO:0005012", response_mode=mode)["causal_genes"] == []
+
+
+@pytest.mark.parametrize("term", ["MONDO:0017310", "MONDO:0015159"])
+def test_umbrella_term_lists_descendant_genes(service: MondoService, term: str) -> None:
+    # Issue #136: an umbrella's genes sit on its children; list them, marked by child.
+    rolled = [{**SKI, "from_descendant": SGS}]
+    assert service.get_disease(term)["causal_genes"] == rolled
+    assert service.resolve_disease(term)["causal_genes"] == rolled
+    minimal = service.get_disease(term, response_mode="minimal")["causal_genes"]
+    assert minimal == [{"hgnc_id": "HGNC:10896", "symbol": "SKI", "from_descendant": SGS}]
+
+
+def test_umbrella_over_the_cap_stays_empty(
+    service: MondoService, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A broad grouping is not a gene list: above the cap, [] + the absence note path.
+    monkeypatch.setattr("mondo_link.services.mondo_service.DESCENDANT_GENE_CAP", 0)
+    assert service.get_disease("MONDO:0017310")["causal_genes"] == []
 
 
 def test_schema3_data_without_table_omits_field(built_db: Path, tmp_path: Path) -> None:
@@ -108,8 +126,6 @@ def _hpo_ids(payload: dict[str, Any]) -> list[str]:
     ("term", "ids"),
     [
         ("MONDO:0005012", ["OMIM:155600"]),  # the loose OMIM:155601 xref is never chained
-        ("MONDO:0015159", ["OMIM:900001", "OMIM:900002"]),  # cap of two, OMIM before ORPHA
-        ("MONDO:0017310", ["ORPHA:284993"]),  # no OMIM mapping: the equivalent ORPHA id
     ],
 )
 async def test_no_gene_term_says_so_and_chains_to_gene_lookup(
@@ -122,8 +138,31 @@ async def test_no_gene_term_says_so_and_chains_to_gene_lookup(
     assert _hpo_ids(payload) == ids
 
 
+@pytest.mark.parametrize(
+    ("term", "ids"),
+    [
+        ("MONDO:0015159", ["OMIM:900001", "OMIM:900002", "ORPHA:900003"]),  # OMIM before ORPHA
+        ("MONDO:0017310", ["ORPHA:284993"]),  # no OMIM mapping: the equivalent ORPHA id
+    ],
+)
+def test_gene_lookup_ids_order(service: MondoService, term: str, ids: list[str]) -> None:
+    assert service.gene_lookup_ids(term) == ids
+    assert [s["arguments"]["disease_id"] for s in nc.no_gene_steps(ids)] == ids[:2]  # cap 2
+
+
+async def test_umbrella_with_descendant_genes_has_no_absence_note(
+    facade: Any, structured: Any
+) -> None:
+    payload = structured(await facade.call_tool("resolve_disease", {"query": "MONDO:0017310"}))
+    assert payload["causal_genes"][0]["from_descendant"] == SGS
+    assert "absence_note" not in payload
+    assert {"tool": "hgnc_resolve_symbol", "arguments": {"query": "SKI"}} in payload["_meta"][
+        "next_commands"
+    ]
+
+
 async def test_no_gene_term_without_mapping_has_note_only(facade: Any, structured: Any) -> None:
-    payload = structured(await facade.call_tool("get_disease", {"term": "MONDO:0000004"}))
+    payload = structured(await facade.call_tool("get_disease", {"term": "MONDO:0000003"}))
     assert payload["causal_genes"] == []
     assert payload["absence_note"] == nc.NO_GENE_NOTE  # names no lookup it cannot offer
     assert _hpo_ids(payload) == []
@@ -161,10 +200,10 @@ async def test_term_with_genes_has_no_absence_note(facade: Any, structured: Any)
 async def test_batch_carries_one_top_level_absence_note(
     facade: Any, structured: Any, tool: str, arg: str
 ) -> None:
-    payload = structured(await facade.call_tool(tool, {arg: [SGS, "MONDO:0000004", "nope zz"]}))
+    payload = structured(await facade.call_tool(tool, {arg: [SGS, "MONDO:0000003", "nope zz"]}))
     assert payload["absence_note"] == nc.NO_GENE_NOTE_BATCH
     assert all("absence_note" not in row for row in payload["results"])
     with_genes = structured(await facade.call_tool(tool, {arg: [SGS, "nope zz"]}))
     assert "absence_note" not in with_genes
-    minimal = {arg: ["MONDO:0000004"], "response_mode": "minimal"}
+    minimal = {arg: ["MONDO:0000003"], "response_mode": "minimal"}
     assert "absence_note" not in structured(await facade.call_tool(tool, minimal))

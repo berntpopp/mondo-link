@@ -367,8 +367,8 @@ def test_descendants_excludes_self(repo: MondoRepository) -> None:
 
 
 def test_count_ancestors_descendants(repo: MondoRepository) -> None:
-    assert repo.count_ancestors(HD) == 4
-    assert repo.count_descendants(ROOT) == 4
+    assert repo.count_closure(HD, ancestors=True) == 4
+    assert repo.count_closure(ROOT, ancestors=False) == 4
 
 
 def test_top_groupings(repo: MondoRepository) -> None:

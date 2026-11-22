@@ -50,7 +50,7 @@ _ROW_IDENTIFIERS: dict[str, tuple[str, ...]] = {
     "matches": ("mondo_id",),
     "xrefs": ("object_id",),  # grouped {prefix: [{object_id, ...}]}
     "mappings": ("object_id",),
-    "causal_genes": ("hgnc_id", "symbol"),
+    "causal_genes": ("hgnc_id", "symbol", "from_descendant"),
 }
 
 #: Collections whose rows are bare scalars (a list of strings); kept verbatim.

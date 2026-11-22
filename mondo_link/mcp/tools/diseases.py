@@ -25,6 +25,7 @@ from mondo_link.mcp.tools._common import (
     TermStr,
     needs_absence_note,
 )
+from mondo_link.services.mondo_service import DESCENDANT_GENE_CAP
 
 if TYPE_CHECKING:
     from fastmcp import FastMCP
@@ -35,7 +36,10 @@ _GENES_NOTE = (
     "causal_genes [{hgnc_id, symbol}] are Mondo's has_material_basis_in_germline_"
     "mutation_in assertions for mostly monogenic diseases, not a gene-disease validity "
     "curation (use GenCC/ClinGen for that); next_commands chain to hgnc_resolve_symbol "
-    "for the gene's band and details. causal_genes: [] means Mondo asserts none; the "
+    "for the gene's band and details. A term with no gene of its own lists its "
+    f"descendants' genes (at most {DESCENDANT_GENE_CAP}), each with "
+    "from_descendant=<child MONDO id>. "
+    "causal_genes: [] means Mondo asserts none; the "
     "field is absent only when the loaded data predates the gene table."
 )
 
