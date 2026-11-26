@@ -6,6 +6,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-11-26
+
+### Fixed
+
+- `_meta.next_commands` no longer carries the caller's unvalidated input (GTS-CORE-TXT-04): a no-hit `search_diseases`, an unmatched `resolve_disease` and an unmatched `resolve_xref` now point to `get_server_capabilities` instead of forwarding the raw query or CURIE to another tool, and page/widen steps that repeat the caller's call are omitted when the repeated value exceeds 200 characters or contains control/format characters.
+
 ## [0.13.0] - 2026-11-26
 
 ### Added

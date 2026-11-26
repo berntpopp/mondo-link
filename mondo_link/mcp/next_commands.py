@@ -7,6 +7,7 @@ chainers steer the success path (resolve -> record -> hierarchy -> cross-ontolog
 
 from __future__ import annotations
 
+import unicodedata
 from typing import Any
 
 
@@ -29,11 +30,21 @@ def page_cmd(tool: str, base_args: dict[str, Any], next_offset: int) -> dict[str
     return cmd(tool, **{**base_args, "offset": next_offset})
 
 
+def safe_echo(value: Any) -> bool:
+    """True if a caller string may be repeated in a page/widen step (GTS-CORE-TXT-04):
+    at most 200 characters and no control/format code points (Unicode Cc/Cf)."""
+    text = str(value)
+    return len(text) <= 200 and not any(unicodedata.category(c) in ("Cc", "Cf") for c in text)
+
+
 def _more_steps(
     tool: str, base_args: dict[str, Any], payload: dict[str, Any], ceiling: int
 ) -> list[dict[str, Any]]:
-    """Forward-page step (if any) then a widen step, for a truncated list payload."""
-    if not payload.get("truncated"):
+    """Forward-page step (if any) then a widen step, for a truncated list payload.
+
+    Omitted when a repeated argument fails ``safe_echo``.
+    """
+    if not payload.get("truncated") or not all(map(safe_echo, base_args.values())):
         return []
     steps: list[dict[str, Any]] = []
     next_offset = payload.get("next_offset")
@@ -111,13 +122,13 @@ def _gene_steps(payload: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def after_resolve_disease(resolution: dict[str, Any]) -> list[dict[str, Any]]:
-    """After resolve_disease: open the canonical record, else fall back to search."""
+    """After resolve_disease: open the canonical record, else a fixed discovery step.
+
+    The unresolved query is never forwarded (GTS-CORE-TXT-04).
+    """
     mondo_id = resolution.get("mondo_id")
     if not mondo_id:
-        return [
-            cmd("search_diseases", query=str(resolution.get("query", ""))),
-            cmd("get_server_capabilities"),
-        ]
+        return [cmd("get_server_capabilities")]
     return [cmd("get_disease", term=mondo_id), *_gene_steps(resolution)]
 
 
@@ -125,7 +136,7 @@ def after_search(query: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
     """After search_diseases: open the top hit; widen if truncated."""
     hits = payload.get("results", [])
     if not hits:
-        return [cmd("resolve_disease", query=query), cmd("get_server_capabilities")]
+        return [cmd("get_server_capabilities")]  # never forward a no-hit query (TXT-04)
     steps: list[dict[str, Any]] = []
     top = hits[0].get("mondo_id")
     if top:
@@ -202,10 +213,7 @@ def after_resolve_xref(payload: dict[str, Any]) -> list[dict[str, Any]]:
     """After resolve_xref: open the top matching Mondo term; widen if truncated."""
     matches = payload.get("matches", [])
     if not matches:
-        return [
-            cmd("search_diseases", query=str(payload.get("xref_id", ""))),
-            cmd("get_server_capabilities"),
-        ]
+        return [cmd("get_server_capabilities")]  # never forward an unmatched xref (TXT-04)
     steps: list[dict[str, Any]] = []
     top = matches[0].get("mondo_id")
     if top:
