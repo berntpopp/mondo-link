@@ -4,14 +4,17 @@ The registered Mondo tools are read-only. Tool calls handled by the shared envel
 `{success, ...payload, _meta}` on success, or `{success: false, error_code, message, retryable,
 recovery_action, _meta}` on error. `_meta.next_commands` lists ready-to-call
 follow-ups — follow them rather than guessing. `response_mode` ∈ `minimal |
-compact | standard | full` (default `compact`). Every record payload echoes
-`mondo_version` for grounding.
+compact | standard | full` (default `compact`). The payload is under `results`
+(lists) or `result` (a single record, e.g. `get_disease`, `resolve_disease`,
+`map_cross_ontology`). Every data result names its provenance in `_meta`: `source`
+(`mondo`), `data_version` (the Mondo release) and `retrieved_at` (when that release
+was downloaded, UTC). The top-level `mondo_version` echo is deprecated in favour of
+`_meta.data_version`.
 
 `_meta` verbosity is tiered by `response_mode` to control the per-call token
-cost: `minimal` returns only `{tool, request_id}`; `compact` (default) adds
-`next_commands` and `capabilities_version` (diff it to skip re-fetching
-capabilities while unchanged) but omits `elapsed_ms`; `standard`/`full` add
-`elapsed_ms`. Pass `response_mode="minimal"` for the leanest payload once you
+cost: `minimal` returns `tool`, `request_id`, `elapsed_ms` and the provenance;
+`compact` (default) and richer add `next_commands` and `capabilities_version`
+(diff it to skip re-fetching capabilities while unchanged). Pass `response_mode="minimal"` for the leanest payload once you
 know the workflow; widen when you need the guidance or timings.
 
 ## Discovery

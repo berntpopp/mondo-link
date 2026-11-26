@@ -11,23 +11,13 @@ same public boundary the tools call through: ``run_mcp_tool``.
 Ratified contract under test:
 
 - SUCCESS: ``{"success": True, <tool payload>, "_meta": {...}}`` -- the
-  envelope boundary injects ``success``/``_meta`` on top of whatever dict the
-  tool body returns; it never reshapes or renames the tool's own payload keys.
+  envelope boundary injects ``success``/``_meta`` and frames the tool body's dict
+  under the v1 §1 payload key: its list as ``results``, a single record as ``result``.
 - FAILURE: a FLAT in-band dict --
   ``{"success": False, "error_code", "message", "retryable",
   "recovery_action", "_meta": {"tool", "request_id", ...}}`` -- NEVER a bare
   raised exception, and NEVER a nested ``"error": {...}`` object.
 
-Known drift vs the fleet-wide aspirational standard (asserted here as ground
-truth, not glossed over):
-
-- The primary payload key is **not** forced to ``results``/``result``.
-  ``genefoundry-router``'s own standard doc (``RESPONSE-ENVELOPE-STANDARD-v1``)
-  explicitly marks that renaming as "not yet the enforced current fleet gate"
-  for Mondo-style backends, whose current router-compatible contract is a
-  backend-owned domain payload alongside ``success``/``_meta``. This suite
-  locks that current, real shape rather than asserting the not-yet-enforced
-  future frame.
 """
 
 from __future__ import annotations
@@ -42,22 +32,20 @@ from mondo_link.mcp.envelope import McpErrorContext, run_mcp_tool
 
 
 async def test_success_envelope_is_flat_banner_over_the_tool_payload() -> None:
-    """success/_meta are injected onto the tool's own payload, unwrapped/unrenamed."""
+    """success/_meta frame the tool's payload, which sits under ``result`` (v1 §1)."""
 
     async def call() -> dict[str, Any]:
-        # A single-item tool payload shaped like get_disease's real return: flat
-        # domain keys, no "result" wrapper key.
+        # A single-item service payload shaped like get_disease's: flat domain keys.
         return {"mondo_id": "MONDO:0008426", "name": "Shprintzen-Goldberg syndrome"}
 
     result = await run_mcp_tool("get_disease", call, context=McpErrorContext("get_disease"))
 
     assert result["success"] is True
-    # The tool's own domain keys are preserved untouched -- no reshaping into a
-    # "result" wrapper (see the module docstring's "known drift" note).
-    assert result["mondo_id"] == "MONDO:0008426"
-    assert result["name"] == "Shprintzen-Goldberg syndrome"
-    assert "result" not in result
-    assert "results" not in result
+    assert result["result"] == {
+        "mondo_id": "MONDO:0008426",
+        "name": "Shprintzen-Goldberg syndrome",
+    }
+    assert "mondo_id" not in result
     assert "error" not in result
     assert isinstance(result["_meta"], dict)
     assert result["_meta"]["tool"] == "get_disease"

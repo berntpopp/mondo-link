@@ -32,6 +32,7 @@ from mondo_link.exceptions import (
     WithdrawnEntryError,
 )
 from mondo_link.mcp import metrics
+from mondo_link.mcp.envelope_frame import OPS_TOOLS, frame_payload, provenance, shape_meta
 from mondo_link.mcp.envelope_sanitize import sanitize_tree, valid_id_entries
 from mondo_link.mcp.next_commands import cmd, default_error_next_commands
 from mondo_link.mcp.untrusted_content import UntrustedTextLimitError
@@ -39,11 +40,10 @@ from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
 logger = logging.getLogger(__name__)
 
-# Per-call _meta is kept lean: static provenance (citation, Mondo release) lives
-# ONLY in get_server_capabilities. Per-call _meta carries dynamic fields: tool,
-# request_id, unsafe_for_clinical_use, [next_commands, capabilities_version,
-# elapsed_ms] -- the bracketed three are tiered by response_mode (see
-# _shape_meta), but `unsafe_for_clinical_use` is a fleet-wide disclaimer
+# Per-call _meta is kept lean: the citation lives ONLY in get_server_capabilities.
+# Per-call _meta carries: tool, request_id, unsafe_for_clinical_use, elapsed_ms, the
+# v1.2 provenance, [next_commands, capabilities_version] -- the bracketed two are
+# tiered by response_mode (see shape_meta); `unsafe_for_clinical_use` is a fleet-wide disclaimer
 # standard (Response-Envelope Standard v1) and is therefore untiered: it is
 # emitted on every call, success or error, at every response_mode -- including
 # `minimal`.
@@ -85,7 +85,7 @@ class McpErrorContext:
     tool_name: str
     fallback: dict[str, Any] | None = field(default=None)
     arguments: dict[str, Any] = field(default_factory=dict)
-    #: The caller's verbosity, used to tier _meta (see :func:`_shape_meta`).
+    #: The caller's verbosity, used to tier _meta (see :func:`~mondo_link.mcp.envelope_frame.shape_meta`).
     response_mode: str = DEFAULT_RESPONSE_MODE
 
 
@@ -402,34 +402,6 @@ def _stamp_capabilities_version(meta: dict[str, Any]) -> None:
         meta["capabilities_version"] = version
 
 
-def _shape_meta(meta: dict[str, Any], response_mode: str) -> dict[str, Any]:
-    """Tier ``_meta`` verbosity by ``response_mode`` to control the per-call token tax.
-
-    - ``minimal``: the trace essentials plus the disclaimer -- ``{tool, request_id,
-      unsafe_for_clinical_use}``. The caller explicitly opted out of guidance, so
-      ``next_commands`` / ``capabilities_version`` / ``elapsed_ms`` are dropped.
-    - ``compact`` (default): keep ``next_commands`` (workflow guidance) and
-      ``capabilities_version`` (the warm-client cache key the discovery contract leans
-      on), but drop the ``elapsed_ms`` observability echo from the hot path -- it is
-      still recorded server-side and surfaced by ``get_diagnostics``.
-    - ``standard`` / ``full``: the complete ``_meta``, including ``elapsed_ms``.
-
-    The universal ``next_commands`` invariant therefore holds for ``compact`` and
-    richer (every default response still chains); ``minimal`` is the documented opt-out.
-    ``unsafe_for_clinical_use`` is never tiered away -- it is present at every
-    ``response_mode`` (Response-Envelope Standard v1).
-    """
-    if response_mode == "minimal":
-        return {
-            "tool": meta["tool"],
-            "request_id": meta["request_id"],
-            "unsafe_for_clinical_use": meta["unsafe_for_clinical_use"],
-        }
-    if response_mode in ("standard", "full"):
-        return meta
-    return {k: v for k, v in meta.items() if k != "elapsed_ms"}
-
-
 def error_result(envelope: dict[str, Any]) -> ToolResult:
     """Wrap an error envelope so it carries BOTH the structure AND MCP ``isError``.
 
@@ -468,8 +440,11 @@ async def run_mcp_tool(
                 "unsafe_for_clinical_use": _UNSAFE_FOR_CLINICAL_USE,
                 "elapsed_ms": elapsed,
             }
+            if success and tool_name not in OPS_TOOLS:
+                result = frame_payload(tool_name, result)
+                meta.update(provenance())  # Response-Envelope v1.2, once for every data tool
             _stamp_capabilities_version(meta)
-            result["_meta"] = _shape_meta(meta, ctx.response_mode)
+            result["_meta"] = shape_meta(meta, ctx.response_mode)
             metrics.record(tool_name, elapsed, ok=success)
             if not success:
                 # A body that RETURNS an error envelope (not raises) must ALSO carry MCP
@@ -483,7 +458,7 @@ async def run_mcp_tool(
         envelope = _error_envelope(exc, ctx)
         envelope["_meta"]["elapsed_ms"] = elapsed
         _stamp_capabilities_version(envelope["_meta"])
-        envelope["_meta"] = _shape_meta(envelope["_meta"], ctx.response_mode)
+        envelope["_meta"] = shape_meta(envelope["_meta"], ctx.response_mode)
         metrics.record(tool_name, elapsed, ok=False)
         logger.warning(
             "mcp_tool_error tool=%s code=%s exc=%s",

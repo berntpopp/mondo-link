@@ -34,9 +34,11 @@ and cross-ontology mapping. It mirrors the sibling `mgi-link` stack/architecture
   `internal_error`.
 - Every `compact` (default) or richer response carries `_meta.next_commands`
   (ready-to-call follow-ups); `minimal` is the explicit opt-out and returns only
-  `_meta = {tool, request_id}`. `_meta` verbosity is tiered by `response_mode`
-  (`_shape_meta`): `compact` keeps `next_commands` + `capabilities_version` but
-  drops the `elapsed_ms` echo; `standard`/`full` add `elapsed_ms`.
+  the core `_meta` (`_META_CORE`: `tool`, `request_id`, `elapsed_ms` and the
+  Response-Envelope v1.2 provenance `source` / `data_version` / `retrieved_at`).
+  `compact` and richer add `next_commands` + `capabilities_version` (`mcp/envelope_frame.py` `shape_meta`).
+- Data tools return their payload under `results` or `result` (`frame_payload`);
+  `DATA_RETRIEVED_AT` in `config.py` is bumped together with the data release pin.
 - Every tool declares `output_schema` + `READ_ONLY_OPEN_WORLD` annotations, and
   its first description sentence is a discovery summary ending with
   `Signature: tool(args...)`.

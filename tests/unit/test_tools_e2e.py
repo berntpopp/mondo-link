@@ -223,7 +223,7 @@ async def test_get_server_capabilities(tools: dict[str, Any]) -> None:
 async def test_resolve_disease(tools: dict[str, Any]) -> None:
     result = await _call(tools, "resolve_disease", query="Marfan")
     assert result["success"] is True
-    assert result["mondo_id"] == _MONDO
+    assert result["result"]["mondo_id"] == _MONDO
     assert isinstance(result["_meta"]["next_commands"], list)
     assert result["_meta"]["next_commands"][0]["tool"] == "get_disease"
 

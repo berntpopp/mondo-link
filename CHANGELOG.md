@@ -6,6 +6,35 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-26
+
+### Changed
+
+- **Response shape:** the payload key is `results` or `result`, as the Response-Envelope
+  Standard v1 §1 requires. `get_disease_ancestors`, `get_disease_descendants`,
+  `get_disease_parents`, `get_disease_children` and `resolve_xref` return their list as
+  `results` (was `ancestors` / `descendants` / `parents` / `children` / `matches`);
+  `map_cross_ontology` returns its grouped mappings as `result` (was `mappings`);
+  `resolve_disease` and `get_disease` return their record under `result` (it was spread over
+  the top level). `search_diseases` and the batch tools already used `results`; counts,
+  paging and the `mondo_id` / `name` echoes stay beside the payload.
+- `_meta` carries `elapsed_ms` at every `response_mode` (the standard requires it); `compact`
+  and `minimal` used to drop it.
+
+### Added
+
+- Response-Envelope Standard v1.2 provenance in `_meta` of every successful data result, at
+  every `response_mode` (#141): `source` (`mondo`), `data_version` (the Mondo release of the
+  served index) and `retrieved_at` (when that release was downloaded: the pinned data
+  release's download time, or the build time of a locally built index).
+- Every data tool's result is validated against the published envelope schema v1.2.0 in the
+  test suite; the vendored behaviour gate checks the provenance rule.
+
+### Deprecated
+
+- The top-level `mondo_version` echo: use `_meta.data_version`. It stays for one minor
+  release.
+
 ## [0.11.3] - 2026-11-22
 
 - An umbrella term that asserts no gene itself now lists the distinct genes asserted on its descendants in `causal_genes`, each row marked `from_descendant: <child MONDO id>` (kept at `response_mode="minimal"`), when there are at most 20 of them; a broader grouping keeps `causal_genes: []` and the `absence_note`. E.g. `resolve_disease("Congenital disorder of deglycosylation")` (MONDO:0031376) returned `[]`; it now returns MAN2C1 (MONDO:0030770) and NGLY1 (MONDO:0800044). The `resolve_disease` / `get_disease` description says so (#136).
