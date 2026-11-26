@@ -6,6 +6,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+## [0.13.0] - 2026-11-26
+
+### Added
+
+- Every paged tool reports `_meta.pagination` with `total_count`, `has_more`, `next_cursor`
+  (always `null`: paging is by offset) and `next_offset` (Response-Envelope Standard v1 §5),
+  in every `response_mode`. The top-level `total`, `truncated` and `next_offset` are unchanged.
+
 ## [0.12.0] - 2026-11-26
 
 ### Changed

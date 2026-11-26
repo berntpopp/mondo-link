@@ -36,6 +36,7 @@ from mondo_link.mcp.envelope_frame import OPS_TOOLS, frame_payload, provenance, 
 from mondo_link.mcp.envelope_sanitize import sanitize_tree, valid_id_entries
 from mondo_link.mcp.next_commands import cmd, default_error_next_commands
 from mondo_link.mcp.untrusted_content import UntrustedTextLimitError
+from mondo_link.services.pagination import pagination_meta
 from mondo_link.services.shaping import DEFAULT_RESPONSE_MODE
 
 logger = logging.getLogger(__name__)
@@ -443,6 +444,8 @@ async def run_mcp_tool(
             if success and tool_name not in OPS_TOOLS:
                 result = frame_payload(tool_name, result)
                 meta.update(provenance())  # Response-Envelope v1.2, once for every data tool
+                if (page := pagination_meta(result)) is not None:
+                    meta["pagination"] = page
             _stamp_capabilities_version(meta)
             result["_meta"] = shape_meta(meta, ctx.response_mode)
             metrics.record(tool_name, elapsed, ok=success)
