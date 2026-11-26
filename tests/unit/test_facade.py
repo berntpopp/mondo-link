@@ -27,8 +27,8 @@ async def test_resolve_disease_by_label(facade: Any, structured: Any) -> None:
         await facade.call_tool("resolve_disease", {"query": "Shprintzen-Goldberg syndrome"})
     )
     assert payload["success"] is True
-    assert payload["mondo_id"] == _SGS
-    assert payload["match_type"] == "primary"
+    assert payload["result"]["mondo_id"] == _SGS
+    assert payload["result"]["match_type"] == "primary"
     assert "2026-06-01" in payload["mondo_version"]
     assert payload["_meta"]["next_commands"][0]["tool"] == "get_disease"
 
@@ -39,15 +39,15 @@ async def test_resolve_disease_alias_rewrite(facade: Any, structured: Any) -> No
         await facade.call_tool("resolve_disease", {"disease": "Shprintzen-Goldberg syndrome"})
     )
     assert payload["success"] is True
-    assert payload["mondo_id"] == _SGS
+    assert payload["result"]["mondo_id"] == _SGS
 
 
 async def test_get_disease_full_record(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("get_disease", {"term": _SGS}))
     assert payload["success"] is True
-    assert payload["mondo_id"] == _SGS
-    assert len(payload["parents"]) >= 2  # multi-parent term
-    prefixes = set(payload["xrefs"])
+    assert payload["result"]["mondo_id"] == _SGS
+    assert len(payload["result"]["parents"]) >= 2  # multi-parent term
+    prefixes = set(payload["result"]["xrefs"])
     assert {"OMIM", "ORPHA", "DOID"} <= prefixes
     assert "2026-06-01" in payload["mondo_version"]
 
@@ -55,26 +55,26 @@ async def test_get_disease_full_record(facade: Any, structured: Any) -> None:
 async def test_get_disease_by_xref(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("get_disease", {"term": "OMIM:182212"}))
     assert payload["success"] is True
-    assert payload["mondo_id"] == _SGS
+    assert payload["result"]["mondo_id"] == _SGS
 
 
 async def test_ancestors_reach_root(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("get_disease_ancestors", {"term": _SGS}))
-    ids = {a["mondo_id"] for a in payload["ancestors"]}
+    ids = {a["mondo_id"] for a in payload["results"]}
     assert "MONDO:0000001" in ids
 
 
 async def test_resolve_xref_to_mondo(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("resolve_xref", {"xref_id": "OMIM:182212"}))
     assert payload["success"] is True
-    assert any(m["mondo_id"] == _SGS for m in payload["matches"])
+    assert any(m["mondo_id"] == _SGS for m in payload["results"])
 
 
 async def test_map_cross_ontology_groups_by_prefix(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("map_cross_ontology", {"term": _SGS}))
     assert payload["success"] is True
-    assert "OMIM" in payload["mappings"]
-    assert payload["count"] == sum(len(v) for v in payload["mappings"].values())
+    assert "OMIM" in payload["result"]
+    assert payload["count"] == sum(len(v) for v in payload["result"].values())
 
 
 async def test_wrong_type_argument_reports_type_not_arg_names(facade: Any, structured: Any) -> None:
@@ -99,10 +99,10 @@ async def test_map_cross_ontology_carries_target_label(facade: Any, structured: 
     # the agent need not make a second call to learn what OMIM:182212 *is*. OBO-only
     # targets (DOID here) have no label and simply omit ``name``.
     payload = structured(await facade.call_tool("map_cross_ontology", {"term": _SGS}))
-    omim = payload["mappings"]["OMIM"][0]
+    omim = payload["result"]["OMIM"][0]
     assert omim["object_id"] == "OMIM:182212"
     assert omim["name"] == "SHPRINTZEN-GOLDBERG SYNDROME; SGS"
-    doid = payload["mappings"]["DOID"][0]
+    doid = payload["result"]["DOID"][0]
     assert "name" not in doid  # OBO xref has no target label -> omitted, not null
 
 
@@ -112,10 +112,10 @@ async def test_get_disease_sparse_fieldset(facade: Any, structured: Any) -> None
     )
     assert payload["success"] is True
     # anchors retained, only the requested xref group kept, definition projected out
-    assert payload["mondo_id"] == _SGS
-    assert set(payload["xrefs"]) == {"OMIM"}
-    assert "definition" not in payload
-    assert "parents" not in payload
+    assert payload["result"]["mondo_id"] == _SGS
+    assert set(payload["result"]["xrefs"]) == {"OMIM"}
+    assert "definition" not in payload["result"]
+    assert "parents" not in payload["result"]
 
 
 async def test_obsolete_term_is_withdrawn(facade: Any, structured: Any) -> None:
@@ -166,27 +166,34 @@ async def test_capabilities_lists_all_tools(facade: Any, structured: Any) -> Non
 
 
 async def test_meta_verbosity_tiers_by_response_mode(facade: Any, structured: Any) -> None:
-    # minimal: the caller opts out of guidance -> only the trace essentials plus
-    # the untiered disclaimer, no next_commands / capabilities_version /
-    # elapsed_ms tax on every call.
+    # minimal: the caller opts out of guidance -> only the trace essentials, the
+    # untiered disclaimer and what the envelope standard requires on every result
+    # (elapsed_ms, provenance); no next_commands / capabilities_version.
     minimal = structured(
         await facade.call_tool(
             "resolve_disease", {"query": "Shprintzen-Goldberg syndrome", "response_mode": "minimal"}
         )
     )
-    assert set(minimal["_meta"]) == {"tool", "request_id", "unsafe_for_clinical_use"}
+    assert set(minimal["_meta"]) == {
+        "tool",
+        "request_id",
+        "unsafe_for_clinical_use",
+        "elapsed_ms",
+        "source",
+        "data_version",
+        "retrieved_at",
+    }
     assert minimal["_meta"]["unsafe_for_clinical_use"] is True
 
-    # compact (default): keeps the workflow guidance + the warm-client cache key,
-    # but drops the elapsed_ms observability echo.
+    # compact (default): adds the workflow guidance + the warm-client cache key.
     compact = structured(
         await facade.call_tool("resolve_disease", {"query": "Shprintzen-Goldberg syndrome"})
     )
     assert compact["_meta"]["next_commands"]
     assert "capabilities_version" in compact["_meta"]
-    assert "elapsed_ms" not in compact["_meta"]
+    assert isinstance(compact["_meta"]["elapsed_ms"], int)
 
-    # standard: full _meta incl. the elapsed_ms echo.
+    # standard: the same complete _meta.
     standard = structured(
         await facade.call_tool(
             "resolve_disease",

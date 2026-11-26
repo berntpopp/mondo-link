@@ -60,15 +60,14 @@ async def test_success_meta_tiers_by_response_mode() -> None:
     async def call() -> dict[str, Any]:
         return {"mondo_id": "MONDO:0008426"}
 
-    # compact (default): lean _meta -- request_id kept, but the elapsed_ms
-    # observability echo is dropped from the hot path (available via diagnostics).
+    # compact (default): the complete _meta, incl. elapsed_ms (Response-Envelope v1 §4).
     compact = await run_mcp_tool("get_disease", call, context=McpErrorContext("get_disease"))
     assert compact["success"] is True
     assert compact["_meta"]["tool"] == "get_disease"
     assert "request_id" in compact["_meta"]
-    assert "elapsed_ms" not in compact["_meta"]
+    assert isinstance(compact["_meta"]["elapsed_ms"], int)
 
-    # standard: full observability echo, incl. elapsed_ms.
+    # standard: the same.
     std = await run_mcp_tool(
         "get_disease", call, context=McpErrorContext("get_disease", response_mode="standard")
     )
@@ -79,7 +78,8 @@ async def test_success_meta_tiers_by_response_mode() -> None:
     minimal = await run_mcp_tool(
         "get_disease", call, context=McpErrorContext("get_disease", response_mode="minimal")
     )
-    assert set(minimal["_meta"]) == {"tool", "request_id", "unsafe_for_clinical_use"}
+    assert {"tool", "request_id", "unsafe_for_clinical_use", "elapsed_ms"} <= set(minimal["_meta"])
+    assert "capabilities_version" not in minimal["_meta"]
     assert minimal["_meta"]["unsafe_for_clinical_use"] is True
 
 

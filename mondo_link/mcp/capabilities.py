@@ -139,23 +139,27 @@ def build_capabilities() -> dict[str, Any]:
         "xref_prefixes": list(XREF_PREFIXES),
         "predicate_rank": dict(PREDICATE_RANK),
         "provenance_policy": (
-            "Static provenance (research-use restriction, citation, Mondo release) "
-            "is declared here and applies to ALL tool outputs; it is not repeated "
-            "per-call to conserve context tokens."
+            "The research-use restriction and citation are declared here and apply to "
+            "ALL tool outputs; they are not repeated per-call to conserve context tokens. "
+            "Each data result names its source, Mondo release and download time in _meta."
         ),
         "per_call_meta": [
             "tool",
             "request_id",
             "elapsed_ms",
+            "source",
+            "data_version",
+            "retrieved_at",
             "capabilities_version",
             "next_commands",
         ],
         "per_call_meta_semantics": (
             "_meta verbosity is tiered by response_mode to control the per-call token "
-            "tax: minimal returns only {tool, request_id}; compact (default) adds "
-            "next_commands (workflow guidance) and capabilities_version (the warm-client "
-            "cache key) but omits elapsed_ms; standard/full add elapsed_ms. Every compact "
-            "or richer response carries next_commands; minimal is the explicit opt-out."
+            "tax: minimal returns tool, request_id, elapsed_ms and the provenance (source, "
+            "data_version = the Mondo release, retrieved_at = when it was downloaded); "
+            "compact (default) and richer add next_commands (workflow guidance) and "
+            "capabilities_version (the warm-client cache key). Every compact or richer "
+            "response carries next_commands; minimal is the explicit opt-out."
         ),
         "capabilities_version_semantics": (
             "_meta.capabilities_version is a content hash of this discovery contract. "

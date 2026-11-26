@@ -123,7 +123,7 @@ async def test_get_disease_definition_is_fenced_typed_object(hostile_facade: Any
     structured, mirror = _both_views(result)
     assert structured["success"] is True
     for view in (structured, mirror):
-        _assert_fenced(view["definition"])
+        _assert_fenced(view["result"]["definition"])
         _assert_no_synthesized_siblings(view)
 
 
@@ -185,7 +185,7 @@ async def test_get_disease_fields_projection_cannot_bypass_fence(hostile_facade:
     )
     structured, mirror = _both_views(result)
     for view in (structured, mirror):
-        _assert_fenced(view["definition"])
+        _assert_fenced(view["result"]["definition"])
 
 
 async def test_get_disease_batch_fields_projection_cannot_bypass_fence(

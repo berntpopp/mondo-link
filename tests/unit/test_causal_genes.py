@@ -133,8 +133,8 @@ async def test_no_gene_term_says_so_and_chains_to_gene_lookup(
 ) -> None:
     # Issue #134: [] must not read as "no gene known".
     payload = structured(await facade.call_tool(tool, {arg: term}))
-    assert payload["causal_genes"] == []
-    assert payload["absence_note"] == nc.NO_GENE_NOTE_WITH_STEP
+    assert payload["result"]["causal_genes"] == []
+    assert payload["result"]["absence_note"] == nc.NO_GENE_NOTE_WITH_STEP
     assert _hpo_ids(payload) == ids
 
 
@@ -154,8 +154,8 @@ async def test_umbrella_with_descendant_genes_has_no_absence_note(
     facade: Any, structured: Any
 ) -> None:
     payload = structured(await facade.call_tool("resolve_disease", {"query": "MONDO:0017310"}))
-    assert payload["causal_genes"][0]["from_descendant"] == SGS
-    assert "absence_note" not in payload
+    assert payload["result"]["causal_genes"][0]["from_descendant"] == SGS
+    assert "absence_note" not in payload["result"]
     assert {"tool": "hgnc_resolve_symbol", "arguments": {"query": "SKI"}} in payload["_meta"][
         "next_commands"
     ]
@@ -163,34 +163,34 @@ async def test_umbrella_with_descendant_genes_has_no_absence_note(
 
 async def test_no_gene_term_without_mapping_has_note_only(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("get_disease", {"term": "MONDO:0000003"}))
-    assert payload["causal_genes"] == []
-    assert payload["absence_note"] == nc.NO_GENE_NOTE  # names no lookup it cannot offer
+    assert payload["result"]["causal_genes"] == []
+    assert payload["result"]["absence_note"] == nc.NO_GENE_NOTE  # names no lookup it cannot offer
     assert _hpo_ids(payload) == []
 
 
 async def test_minimal_mode_has_no_absence_note(facade: Any, structured: Any) -> None:
     args = {"term": "MONDO:0005012", "response_mode": "minimal"}
     payload = structured(await facade.call_tool("get_disease", args))
-    assert payload["causal_genes"] == []
-    assert "absence_note" not in payload
+    assert payload["result"]["causal_genes"] == []
+    assert "absence_note" not in payload["result"]
 
 
 async def test_obsolete_term_gets_no_note_or_gene_step(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("resolve_disease", {"query": "OMIM:900009"}))
-    assert (payload["mondo_id"], payload["obsolete"]) == ("MONDO:0099999", True)
-    assert "absence_note" not in payload
+    assert (payload["result"]["mondo_id"], payload["result"]["obsolete"]) == ("MONDO:0099999", True)
+    assert "absence_note" not in payload["result"]
     assert _hpo_ids(payload) == []
     # A `fields` projection drops the record's own `obsolete` flag; still no note or step.
     args = {"term": "OMIM:900009", "fields": ["causal_genes"]}
     sparse = structured(await facade.call_tool("get_disease", args))
-    assert "absence_note" not in sparse
+    assert "absence_note" not in sparse["result"]
     assert _hpo_ids(sparse) == []
 
 
 async def test_term_with_genes_has_no_absence_note(facade: Any, structured: Any) -> None:
     payload = structured(await facade.call_tool("resolve_disease", {"query": SGS}))
-    assert payload["causal_genes"]
-    assert "absence_note" not in payload
+    assert payload["result"]["causal_genes"]
+    assert "absence_note" not in payload["result"]
     assert _hpo_ids(payload) == []
 
 

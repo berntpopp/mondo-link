@@ -295,8 +295,8 @@ async def test_get_disease_minimal_preserves_the_xrefs_collection(facade: Any) -
     env = result.structured_content
     assert env["success"] is True
     # the grouped xrefs collection survives (narrowed to object_id), not deleted
-    assert env["xrefs"], "minimal must keep the xrefs collection"
-    for rows in env["xrefs"].values():
+    assert env["result"]["xrefs"], "minimal must keep the xrefs collection"
+    for rows in env["result"]["xrefs"].values():
         for entry in rows:
             assert set(entry) <= {"object_id"}
 
