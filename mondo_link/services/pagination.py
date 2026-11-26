@@ -29,3 +29,15 @@ def page_fields(*, total: int, returned: int, limit: int, offset: int = 0) -> di
     if truncated:
         block["next_offset"] = consumed
     return block
+
+
+def pagination_meta(payload: dict[str, object]) -> dict[str, object] | None:
+    """``_meta.pagination`` (Response-Envelope v1 section 5) for a payload with a page block."""
+    if "truncated" not in payload or "total" not in payload:
+        return None
+    return {
+        "total_count": payload["total"],
+        "has_more": payload["truncated"],
+        "next_cursor": None,  # paging is by offset
+        "next_offset": payload.get("next_offset"),
+    }

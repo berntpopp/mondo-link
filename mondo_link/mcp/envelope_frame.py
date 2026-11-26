@@ -21,6 +21,7 @@ _META_CORE = (
     "source",
     "data_version",
     "retrieved_at",
+    "pagination",
 )
 
 

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import pytest
+
 from mondo_link.services.pagination import page_fields
 
 
@@ -43,3 +47,21 @@ def test_page_fields_last_page_not_truncated() -> None:
     assert out["truncated"] is False
     assert out["offset"] == 8
     assert "next_offset" not in out
+
+
+@pytest.mark.parametrize("mode", ["minimal", "compact"])
+async def test_paged_tool_reports_meta_pagination(facade: Any, structured: Any, mode: str) -> None:
+    args = {"query": "syndrome", "limit": 1, "response_mode": mode}
+    out = structured(await facade.call_tool("search_diseases", args))
+    assert out["truncated"] is True
+    assert out["_meta"]["pagination"] == {
+        "total_count": out["total"],
+        "has_more": True,
+        "next_cursor": None,
+        "next_offset": 1,
+    }
+
+
+async def test_unpaged_tool_has_no_meta_pagination(facade: Any, structured: Any) -> None:
+    out = structured(await facade.call_tool("get_disease", {"term": "MONDO:0000003"}))
+    assert "pagination" not in out["_meta"]
